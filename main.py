@@ -114,7 +114,7 @@ def main():
         ACCESS_ID,
         ACCESS_KEY,
         MQ_ENDPOINT,
-        TuyaCloudPulsarTopic.TEST
+        TuyaCloudPulsarTopic.PROD
     )
     
     open_pulsar.add_message_listener(message_handler)
