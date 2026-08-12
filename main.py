@@ -124,7 +124,6 @@ def main():
     try:
         while True:
             time.sleep(1)
-            logging.info("sleep...")
     except KeyboardInterrupt:
         open_pulsar.stop()
 
