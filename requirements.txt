@@ -1,1 +1,1 @@
-tuya-iot-python
+tuya-connector-python
