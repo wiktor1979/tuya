@@ -2,20 +2,23 @@ import os
 import json
 import logging
 import time
-from tuya_sharing import (
+from tuya_connector import (
     TuyaOpenPulsar,
     TuyaCloudPulsarTopic,
 )
 
-# Konfiguracja prostego logowania
+# Konfiguracja logów
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s'
 )
 
+# Pobieranie kluczy z Secrets Fly.io
 ACCESS_ID = os.environ.get("TUYA_ACCESS_ID")
 ACCESS_KEY = os.environ.get("TUYA_ACCESS_KEY")
-ENDPOINT = TuyaCloudPulsarTopic.EU
+
+# Endpoint Pulsar dla Europy (domyślny port WSS Tuya)
+MQ_ENDPOINT = "wss://mqe.tuyaeu.com:8285/"
 
 def save_data(device_id, timestamp, status_list):
     print(f"\n[ODEBRANO DANE] Urządzenie: {device_id} | Czas: {timestamp}")
@@ -26,7 +29,6 @@ def save_data(device_id, timestamp, status_list):
 
 def message_handler(msg):
     try:
-        # Parsowanie ramki JSON ze zdarzeniem z Tuya
         payload = json.loads(msg)
         dev_id = payload.get("devId")
         status = payload.get("status", [])
@@ -41,26 +43,29 @@ def main():
     if not ACCESS_ID or not ACCESS_KEY:
         raise ValueError("Brak zdefiniowanych kluczy TUYA_ACCESS_ID / TUYA_ACCESS_KEY w Secrets!")
 
-    logging.info("Inicjalizacja połączenia Tuya Pulsar WebSocket...")
+    logging.info("Inicjalizacja połączenia TuyaOpenPulsar...")
 
-    # Utworzenie instancji Pulsar w nowym SDK Tuya
-    pulsar = TuyaOpenPulsar(
-        ACCESS_ID, 
-        ACCESS_KEY, 
-        ENDPOINT, 
+    # Prawidłowa klasa z tuya-connector-python
+    open_pulsar = TuyaOpenPulsar(
+        ACCESS_ID,
+        ACCESS_KEY,
+        MQ_ENDPOINT,
         TuyaCloudPulsarTopic.PROD
     )
     
-    pulsar.add_message_listener(message_handler)
-    pulsar.start()
+    # Dodanie słuchacza zdarzeń
+    open_pulsar.add_message_listener(message_handler)
+    
+    # Start nasłuchiwania w tle
+    open_pulsar.start()
     logging.info("Serwis wystartował pomyślnie na Fly.io. Nasłuchiwanie zdarzeń...")
 
-    # Pętla utrzymująca główny wątek skryptu przy życiu
+    # Podtrzymanie pętli głównego wątku
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        pulsar.stop()
+        open_pulsar.stop()
 
 if __name__ == "__main__":
     main()
