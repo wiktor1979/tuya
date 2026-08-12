@@ -43,7 +43,7 @@ def message_handler(msg):
 def main():
     if not ACCESS_ID or not ACCESS_KEY:
         raise ValueError("Brak zdefiniowanych kluczy TUYA_ACCESS_ID / TUYA_ACCESS_KEY w Secrets!")
-
+    open_pulsar.add_message_listener(message_handler)
     logging.info("Inicjalizacja połączenia TuyaOpenPulsar...")
 
     # Prawidłowa klasa z tuya-connector-python
@@ -58,9 +58,9 @@ def main():
     open_pulsar.add_message_listener(message_handler)
     
     # Start nasłuchiwania w tle
-        logging.info("Serwis wystartował pomyślnie na Fly.io. Nasłuchiwanie zdarzeń...")
-    open_pulsar.start()
 
+    open_pulsar.start()
+        logging.info("Serwis wystartował pomyślnie na Fly.io. Nasłuchiwanie zdarzeń...")
 
     # Podtrzymanie pętli głównego wątku
     try:
