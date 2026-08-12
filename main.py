@@ -5,13 +5,11 @@ import time
 import base64
 from tuya_connector import (
     TuyaOpenPulsar,
-    TuyaCloudPulsarTopic,
-    TuyaLogging
+    TuyaCloudPulsarTopic
 )
 from Crypto.Cipher import AES
 
 # Włączenie rozszerzonych logów SDK Tuya dla diagnostyki
-TuyaLogging.configure()
 
 # Konfiguracja logów głównych
 logging.basicConfig(
