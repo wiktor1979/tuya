@@ -3,13 +3,15 @@ import json
 import logging
 import time
 from tuya_sharing import (
-    CustomerDeviceMsg,
-    Manager,
     TuyaOpenPulsar,
     TuyaCloudPulsarTopic,
 )
 
-logging.basicConfig(level=logging.INFO)
+# Konfiguracja prostego logowania
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s'
+)
 
 ACCESS_ID = os.environ.get("TUYA_ACCESS_ID")
 ACCESS_KEY = os.environ.get("TUYA_ACCESS_KEY")
@@ -24,10 +26,12 @@ def save_data(device_id, timestamp, status_list):
 
 def message_handler(msg):
     try:
+        # Parsowanie ramki JSON ze zdarzeniem z Tuya
         payload = json.loads(msg)
         dev_id = payload.get("devId")
         status = payload.get("status", [])
         t = payload.get("dataId")
+        
         if dev_id and status:
             save_data(dev_id, t, status)
     except Exception as e:
@@ -35,9 +39,11 @@ def message_handler(msg):
 
 def main():
     if not ACCESS_ID or not ACCESS_KEY:
-        raise ValueError("Brak zdefiniowanych kluczy TUYA_ACCESS_ID / TUYA_ACCESS_KEY!")
+        raise ValueError("Brak zdefiniowanych kluczy TUYA_ACCESS_ID / TUYA_ACCESS_KEY w Secrets!")
 
-    # Inicjalizacja klienta Pulsar w nowym SDK Tuya
+    logging.info("Inicjalizacja połączenia Tuya Pulsar WebSocket...")
+
+    # Utworzenie instancji Pulsar w nowym SDK Tuya
     pulsar = TuyaOpenPulsar(
         ACCESS_ID, 
         ACCESS_KEY, 
@@ -46,10 +52,10 @@ def main():
     )
     
     pulsar.add_message_listener(message_handler)
-    print("Serwis Tuya wystartował na Fly.io...")
     pulsar.start()
+    logging.info("Serwis wystartował pomyślnie na Fly.io. Nasłuchiwanie zdarzeń...")
 
-    # Podtrzymanie działania głównego wątku
+    # Pętla utrzymująca główny wątek skryptu przy życiu
     try:
         while True:
             time.sleep(1)
