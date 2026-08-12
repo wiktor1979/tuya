@@ -1,1 +1,1 @@
-tuya-connector-python
+tuya-device-sharing-sdk
