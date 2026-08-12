@@ -58,8 +58,9 @@ def main():
     open_pulsar.add_message_listener(message_handler)
     
     # Start nasłuchiwania w tle
+        logging.info("Serwis wystartował pomyślnie na Fly.io. Nasłuchiwanie zdarzeń...")
     open_pulsar.start()
-    logging.info("Serwis wystartował pomyślnie na Fly.io. Nasłuchiwanie zdarzeń...")
+
 
     # Podtrzymanie pętli głównego wątku
     try:
