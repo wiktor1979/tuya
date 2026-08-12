@@ -22,11 +22,11 @@ ACCESS_KEY = os.environ.get("TUYA_ACCESS_KEY")
 MQ_ENDPOINT = "wss://mqe.tuyaeu.com:8285/"
 
 def save_data(device_id, timestamp, status_list):
-    print(f"\n[ODEBRANO DANE] Urządzenie: {device_id} | Czas: {timestamp}")
+    print(f"\n[ODEBRANO DANE] Urządzenie: {device_id} | Czas: {timestamp}",flush=True)
     for item in status_list:
         code = item.get("code")
         val = item.get("value")
-        print(f"  -> {code} = {val}")
+        print(f"  -> {code} = {val}", flush=True)
 
 def message_handler(msg):
     try:
