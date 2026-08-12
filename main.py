@@ -1,27 +1,26 @@
 import os
 import json
 import logging
-from tuya_iot import (
+import time
+from tuya_sharing import (
+    CustomerDeviceMsg,
+    Manager,
     TuyaOpenPulsar,
     TuyaCloudPulsarTopic,
-    TuyaLogging
 )
 
-TuyaLogging.configure()
+logging.basicConfig(level=logging.INFO)
 
-# Pobieranie danych z bezpiecznych zmiennych środowiskowych w Render
 ACCESS_ID = os.environ.get("TUYA_ACCESS_ID")
 ACCESS_KEY = os.environ.get("TUYA_ACCESS_KEY")
 ENDPOINT = TuyaCloudPulsarTopic.EU
 
 def save_data(device_id, timestamp, status_list):
-    print(f"\n[ODEBRANO ZDARZENIE] Urządzenie: {device_id} | Czas: {timestamp}")
+    print(f"\n[ODEBRANO DANE] Urządzenie: {device_id} | Czas: {timestamp}")
     for item in status_list:
         code = item.get("code")
         val = item.get("value")
-        print(f"  -> Parametr: {code} = {val}")
-        
-        # TUTAJ DODAJ ZAPIS (np. wysyłanie danych do zewnętrznej bazy lub webhooka)
+        print(f"  -> {code} = {val}")
 
 def message_handler(msg):
     try:
@@ -32,16 +31,30 @@ def message_handler(msg):
         if dev_id and status:
             save_data(dev_id, t, status)
     except Exception as e:
-        logging.error(f"Błąd przetwarzania: {e}")
+        logging.error(f"Błąd przetwarzania wiadomości: {e}")
 
 def main():
     if not ACCESS_ID or not ACCESS_KEY:
-        raise ValueError("Brak zdefiniowanych kluczy TUYA_ACCESS_ID / TUYA_ACCESS_KEY w środowisku!")
+        raise ValueError("Brak zdefiniowanych kluczy TUYA_ACCESS_ID / TUYA_ACCESS_KEY!")
 
-    pulsar = TuyaOpenPulsar(ACCESS_ID, ACCESS_KEY, ENDPOINT, TuyaCloudPulsarTopic.PROD)
+    # Inicjalizacja klienta Pulsar w nowym SDK Tuya
+    pulsar = TuyaOpenPulsar(
+        ACCESS_ID, 
+        ACCESS_KEY, 
+        ENDPOINT, 
+        TuyaCloudPulsarTopic.PROD
+    )
+    
     pulsar.add_message_listener(message_handler)
-    print("Uruchamianie serwisu Tuya na Render.com...")
+    print("Serwis Tuya wystartował na Fly.io...")
     pulsar.start()
+
+    # Podtrzymanie działania głównego wątku
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        pulsar.stop()
 
 if __name__ == "__main__":
     main()
