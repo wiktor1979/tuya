@@ -1,1 +1,2 @@
 tuya-device-sharing-sdk
+cryptography
