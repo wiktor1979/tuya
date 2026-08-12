@@ -7,6 +7,7 @@ from tuya_connector import (
     TuyaCloudPulsarTopic,
 )
 
+
 # Konfiguracja logów
 logging.basicConfig(
     level=logging.INFO,
