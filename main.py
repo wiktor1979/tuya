@@ -27,6 +27,7 @@ def save_data(device_id, timestamp, status_list):
         code = item.get("code")
         val = item.get("value")
         print(f"  -> {code} = {val}", flush=True)
+        logging.info("Savemessage")
 
 def message_handler(msg):
     try:
@@ -43,7 +44,7 @@ def message_handler(msg):
 def main():
     if not ACCESS_ID or not ACCESS_KEY:
         raise ValueError("Brak zdefiniowanych kluczy TUYA_ACCESS_ID / TUYA_ACCESS_KEY w Secrets!")
-    open_pulsar.add_message_listener(message_handler)
+
     logging.info("Inicjalizacja połączenia TuyaOpenPulsar...")
 
     # Prawidłowa klasa z tuya-connector-python
@@ -60,7 +61,7 @@ def main():
     # Start nasłuchiwania w tle
 
     open_pulsar.start()
-        logging.info("Serwis wystartował pomyślnie na Fly.io. Nasłuchiwanie zdarzeń...")
+    logging.info("Serwis wystartował pomyślnie na Fly.io. Nasłuchiwanie zdarzeń...")
 
     # Podtrzymanie pętli głównego wątku
     try:
