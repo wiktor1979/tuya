@@ -2,6 +2,8 @@ import os
 import json
 import logging
 import time
+import base64
+import hashlib
 from tuya_connector import (
     TuyaOpenPulsar,
     TuyaCloudPulsarTopic,
@@ -23,6 +25,35 @@ ACCESS_KEY = os.environ.get("TUYA_ACCESS_KEY")
 # Używamy stałej z biblioteki dla regionu Europy (EU)
 MQ_ENDPOINT = TuyaCloudPulsarTopic.EU
 
+
+from Crypto.Cipher import AES
+
+def decrypt_tuya_gcm(encrypted_base64_str: str, access_key: str) -> dict:
+    """
+    Deszyfruje ładunek Tuya Message Queue zaszyfrowany algorytmem AES-GCM.
+    """
+    # 1. Przygotowanie klucza: MD5(access_key) obcięty do 16 bajtów (AES-128)
+    key = hashlib.md5(access_key.encode('utf-8')).hexdigest()[8:24].encode('utf-8')
+    
+    # 2. Dekodowanie ciągu Base64 do postaci surowych bajtów
+    raw_data = base64.b64decode(encrypted_base64_str)
+    
+    # 3. Wyciągnięcie elementów struktury AES-GCM:
+    # Standardowo w Tuya: IV (12 bajtów) + Ciphertext + Tag (16 bajtów)
+    iv = raw_data[:12]
+    tag = raw_data[-16:]
+    ciphertext = raw_data[12:-16]
+    
+    # 4. Inicjalizacja szyfru AES w trybie GCM
+    cipher = AES.new(key, AES.MODE_GCM, nonce=iv)
+    
+    # 5. Odszyfrowanie i weryfikacja tagu autentyczności
+    decrypted_bytes = cipher.decrypt_and_verify(ciphertext, tag)
+    
+    # 6. Parsowanie zdekodowanego napisu UTF-8 do słownika JSON
+    return json.loads(decrypted_bytes.decode('utf-8'))
+
+
 def save_data(device_id, timestamp, status_list):
     print(f"\n[ODEBRANO DANE] Urządzenie: {device_id} | Czas: {timestamp}", flush=True)
     for item in status_list:
@@ -33,31 +64,35 @@ def save_data(device_id, timestamp, status_list):
 
 def message_handler(msg):
     try:
-        # 1. Dekodowanie / Odszyfrowanie pakietu danych wywołaniem metody dekodującej Tuya
-        # Wiadomość trafia tu jako zaszyfrowany string lub obiekt danych
         if isinstance(msg, str):
             payload = json.loads(msg)
         else:
             payload = msg
 
-        # Jeśli treść jest zaszyfrowana w polu "data", dekodujemy ją za pomocą ACCESS_KEY
+        # Jeśli pakiet zawiera zaszyfrowane dane w polu "data"
         if "data" in payload and isinstance(payload["data"], str):
-            from tuya_connector.pulsar import decrypt_data
-            decrypted_str = decrypt_data(payload["data"], ACCESS_KEY)
-            payload = json.loads(decrypted_str)
+            encrypted_str = payload["data"]
+            
+            try:
+                # Próba deszyfrowania nowszym algorytmem AES-GCM
+                decrypted_payload = decrypt_tuya_gcm(encrypted_str, ACCESS_KEY)
+            except Exception:
+                # Fallback: domyślny dekoder Tuya (AES-ECB)
+                from tuya_connector.pulsar import decrypt_data
+                decrypted_str = decrypt_data(encrypted_str, ACCESS_KEY)
+                decrypted_payload = json.loads(decrypted_str)
 
-        # 2. Wyciąganie właściwych pól ze zdarzenia
+            payload = decrypted_payload
+
         dev_id = payload.get("devId")
         status = payload.get("status", [])
         t = payload.get("dataId") or payload.get("t")
 
         if dev_id and status:
             save_data(dev_id, t, status)
-        else:
-            logging.debug(f"Odebrano pakiet bez zmian stanu: {payload}")
 
     except Exception as e:
-        logging.error(f"Błąd przetwarzania/dekodowania wiadomości: {e}")
+        logging.error(f"Błąd deszyfrowania/przetwarzania ramki AES-GCM: {e}")
 
 def main():
     if not ACCESS_ID or not ACCESS_KEY:
