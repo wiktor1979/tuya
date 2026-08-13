@@ -1,4 +1,4 @@
-# fly.toml app configuration file generated for tuya-ftf6bw on 2026-08-12T15:04:31Z
+# fly.toml app configuration file generated for tuya-ftf6bw on 2026-08-13T14:33:13Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
@@ -9,7 +9,6 @@ primary_region = 'arn'
 [mounts]
   source = "tuya_data"
   destination = "/data"
-
 
 [build]
 
