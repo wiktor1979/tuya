@@ -1,7 +1,7 @@
 import sqlite3
 import time
 
-DB_FILE = "tuya_telemetry.db"
+DB_FILE = "/data/tuya_telemetry.db"
 
 # TUTAJ WPROWADŹ ID SWOJEJ POMPY CIEPŁA
 HEAT_PUMP_DEV_ID = "bf874f7ae72aca1fc23op0"
