@@ -1,19 +1,19 @@
-# fly.toml app configuration file generated for tuya-ftf6bw on 2026-08-13T14:33:13Z
+# fly.toml app configuration file generated for scop on 2026-08-13T19:37:56Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'tuya-ftf6bw'
+app = 'scop'
 primary_region = 'arn'
-
-[mounts]
-  source = "tuya_data"
-  destination = "/data"
 
 [build]
 
+[[mounts]]
+  source = 'tuya_data'
+  destination = '/data'
+
 [http_service]
-  internal_port = 8080
+  internal_port = 8501
   force_https = true
   auto_stop_machines = 'stop'
   auto_start_machines = true
