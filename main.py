@@ -21,7 +21,7 @@ ACCESS_ID = os.environ.get("TUYA_ACCESS_ID")
 ACCESS_KEY = os.environ.get("TUYA_ACCESS_KEY")
 
 # Endpoint Pulsar dla Europy
-MQ_ENDPOINT = "wss://mqe.tuyaeu.com:7285/"
+MQ_ENDPOINT = "wss://mqe.tuyaeu.com:8285/"
 
 
 def decrypt_tuya_gcm(encrypted_base64_str: str, access_key: str) -> dict:
