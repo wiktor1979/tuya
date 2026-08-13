@@ -10,7 +10,7 @@ st.set_page_config(page_title="Monitor Pompy Ciepła", layout="wide", page_icon=
 
 st.title("🔥 Panel Monitorowania i Diagnostyki Pompy Ciepła")
 
-DB_FILE = "tuya_telemetry.db"
+DB_FILE = "/data/tuya_telemetry.db"
 
 # --- SŁOWNIK METADANYCH PARAMETRÓW ---
 PARAM_INFO = {
