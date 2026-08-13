@@ -4,7 +4,7 @@
 #
 
 app = 'tuya-ftf6bw'
-primary_region = 'iad'
+primary_region = 'arn'
 
 [mounts]
   source = "tuya_data"
