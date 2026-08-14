@@ -2,3 +2,4 @@ tuya-connector-python
 cryptography
 pulsar-client
 streamlit
+plotly
