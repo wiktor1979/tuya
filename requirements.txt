@@ -3,3 +3,4 @@ cryptography
 pulsar-client
 streamlit
 plotly
+python-dotenv
