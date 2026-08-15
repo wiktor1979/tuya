@@ -1,4 +1,4 @@
-import sqlite3
+    import sqlite3
 import pandas as pd
 import numpy as np
 import streamlit as st
@@ -62,6 +62,11 @@ st.sidebar.header("⚙️ Kalkulator COP")
 cos_phi = st.sidebar.slider("Współczynnik mocy (cos φ)", 0.80, 1.00, 0.92, 0.01)
 ac_curr_div = st.sidebar.selectbox("Dzielnik prądu (ac_curr)", [1, 10, 100], index=1)
 
+# === NOWOŚĆ: Kalibracja strat ===
+st.sidebar.header("🛠️ Kalibracja strat mocy")
+standby_power_w = st.sidebar.number_input("Pobór w spoczynku (elektronika) [W]", min_value=0, max_value=100, value=20, step=5)
+active_power_w = st.sidebar.number_input("Pobór pracy (wentylator, pompa obieg.) [W]", min_value=0, max_value=300, value=140, step=10)
+
 def load_data(hours: int) -> pd.DataFrame:
     conn = sqlite3.connect(DB_FILE)
     query = f"""
@@ -84,7 +89,7 @@ df = load_data(hours_back)
 if df.empty:
     st.info(f"Brak danych z ostatnich {hours_back} godzin w bazie.")
 else:
-    # KOLEKCJA WARTOSCI: Scalanie val_num oraz val_str (dla booleanów typu True/False)
+    # KOLEKCJA WARTOSCI: Scalanie val_num oraz val_str
     df["val_combined"] = df["val_num"]
     bool_map = {
         "True": 1.0, "true": 1.0, "1": 1.0, "1.0": 1.0,
@@ -124,7 +129,6 @@ else:
         for col in needed_cols:
             df_pivot[col] = df_pivot[col].ffill()
 
-        # PO WŁASCIWYM ZAPISIE: valve >= 0.5 oznacza CWU, poniżej 0.5 to CO
         df_pivot["Tryb"] = np.where(df_pivot["valve"] >= 0.5, "CWU", "CO")
     else:
         df_pivot["Tryb"] = np.where(df_pivot["valve"] >= 0.5, "CWU", "CO")
@@ -134,18 +138,31 @@ else:
     df_pivot["flow_m3h"] = df_pivot["flow_rate"] / 10.0
     df_pivot["delta_t"] = df_pivot["out_water_temp"] - df_pivot["in_water_temp"]
 
+    # === NOWOŚĆ: Korekta Mocy Elektrycznej ===
+    raw_p_el_kw = (df_pivot["ac_vol"] * curr_a * cos_phi) / 1000.0
+    is_active = raw_p_el_kw > 0.1 # Zakładamy, że sprężarka pracuje przy > 100W
+    correction_kw = (standby_power_w / 1000.0) + np.where(is_active, active_power_w / 1000.0, 0.0)
+    
+    df_pivot["P_el_kw"] = raw_p_el_kw + correction_kw
     df_pivot["P_th_kw"] = (df_pivot["flow_m3h"] * 4.186 * df_pivot["delta_t"]) / 3.6
-    df_pivot["P_el_kw"] = (df_pivot["ac_vol"] * curr_a * cos_phi) / 1000.0
-    df_pivot["COP"] = df_pivot["P_th_kw"] / df_pivot["P_el_kw"]
+    
+    # Zabezpieczenie COP przed liczeniem na samym stand-by
+    df_pivot["COP"] = np.where(is_active, df_pivot["P_th_kw"] / df_pivot["P_el_kw"], np.nan)
 
-    invalid_mask = (df_pivot["P_el_kw"] < 0.1) | (df_pivot["P_th_kw"] <= 0) | (df_pivot["COP"] < 0.5) | (df_pivot["COP"] > 10.0)
+    invalid_mask = (df_pivot["P_th_kw"] <= 0) | (df_pivot["COP"] < 0.5) | (df_pivot["COP"] > 10.0)
     df_pivot.loc[invalid_mask, "COP"] = np.nan
     df_pivot.loc[df_pivot["P_th_kw"] < 0, "P_th_kw"] = 0.0
 
-    # ENERGIA I SCOP
+    # --- ENERGIA I SCOP ---
     df_pivot["dt_hours"] = df_pivot["czas"].diff().dt.total_seconds().fillna(0) / 3600.0
-    df_pivot["E_th_kwh"] = df_pivot["P_th_kw"] * df_pivot["dt_hours"]
-    df_pivot["E_el_kwh"] = df_pivot["P_el_kw"] * df_pivot["dt_hours"]
+    
+    # === NOWOŚĆ: Całkowanie schodkowe dla surowych danych ===
+    if resample_rule:
+        df_pivot["E_th_kwh"] = df_pivot["P_th_kw"] * df_pivot["dt_hours"]
+        df_pivot["E_el_kwh"] = df_pivot["P_el_kw"] * df_pivot["dt_hours"]
+    else:
+        df_pivot["E_th_kwh"] = df_pivot["P_th_kw"].shift(1).fillna(0) * df_pivot["dt_hours"]
+        df_pivot["E_el_kwh"] = df_pivot["P_el_kw"].shift(1).fillna(0) * df_pivot["dt_hours"]
 
     co_mask = (df_pivot["Tryb"] == "CO") & (~df_pivot["COP"].isna())
     cwu_mask = (df_pivot["Tryb"] == "CWU") & (~df_pivot["COP"].isna())
@@ -358,3 +375,4 @@ else:
         fig_disc.add_hline(y=90.0, line_dash="dash", line_color="Red", annotation_text="Krytyczne 90°C", annotation_position="bottom right")
         fig_disc.update_layout(hovermode="x unified", xaxis_title="Czas", yaxis_title="Wartość")
         st.plotly_chart(fig_disc, width="stretch")
+        
