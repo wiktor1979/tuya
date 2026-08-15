@@ -8,6 +8,35 @@ import plotly.graph_objects as go
 # --- KONFIGURACJA STRONY ---
 st.set_page_config(page_title="Monitor Pompy Ciepła", layout="wide", page_icon="🔥")
 
+st.markdown("""
+<style>
+/* 1. Wygląd kafelków (tło, ramka, zaokrąglenia) dla wszystkich metryk */
+[data-testid="stMetric"] {
+    background-color: #1E1E1E; /* Ciemne tło kafelka */
+    border: 1px solid #333;
+    border-radius: 10px;
+    padding: 15px;
+    box-shadow: 2px 2px 10px rgba(0,0,0,0.3);
+}
+
+/* 2. Wymuszenie siatki (np. po 2 kafelki w rzędzie) tylko na telefonach */
+@media (max-width: 768px) {
+    /* Wybierz bloki kolumn, które zawierają metryki i zamień na siatkę */
+    [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) {
+        display: grid !important;
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 10px !important;
+    }
+    
+    /* Zmniejszenie czcionki na telefonach, by tekst typu "0.0 m³/h" nie wychodził poza ramkę */
+    [data-testid="stMetricValue"] {
+        font-size: 1.5rem !important;
+    }
+}
+</style>
+""", unsafe_allow_html=True)
+
+
 st.title("🔥 Panel Monitorowania i Diagnostyki Pompy Ciepła")
 
 DB_FILE = "/data/tuya_telemetry.db"
