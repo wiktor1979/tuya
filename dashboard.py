@@ -6,31 +6,30 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
 
-# Import funkcji zapisu odczytów ręcznych z db.py
-from db import save_manual_reading
-
-# --- KONFIGURACJA STRONY (ZAWSZE NA SAMYM POCZĄTKU STREAMLIT) ---
+# --- KONFIGURACJA STRONY ---
 st.set_page_config(page_title="Monitor Pompy Ciepła", layout="wide", page_icon="🔥")
 
 st.markdown("""
 <style>
-/* 1. Wygląd kafelków dla wszystkich metryk */
+/* 1. Wygląd kafelków (tło, ramka, zaokrąglenia) dla wszystkich metryk */
 [data-testid="stMetric"] {
-    background-color: #1E1E1E;
+    background-color: #1E1E1E; /* Ciemne tło kafelka */
     border: 1px solid #333;
     border-radius: 10px;
     padding: 15px;
     box-shadow: 2px 2px 10px rgba(0,0,0,0.3);
 }
 
-/* 2. Wymuszenie siatki po 2 kafelki w rzędzie na telefonach */
+/* 2. Wymuszenie siatki (np. po 2 kafelki w rzędzie) tylko na telefonach */
 @media (max-width: 768px) {
+    /* Wybierz bloki kolumn, które zawierają metryki i zamień na siatkę */
     [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) {
         display: grid !important;
         grid-template-columns: repeat(2, 1fr) !important;
         gap: 10px !important;
     }
     
+    /* Zmniejszenie czcionki na telefonach, by tekst typu "0.0 m³/h" nie wychodził poza ramkę */
     [data-testid="stMetricValue"] {
         font-size: 1.5rem !important;
     }
@@ -41,6 +40,48 @@ st.markdown("""
 st.title("🔥 Panel Monitorowania i Diagnostyki Pompy Ciepła")
 
 DB_FILE = "/data/tuya_telemetry.db"
+
+# --- INICJALIZACJA STANUSESSION_STATE DO FORMULARZA ---
+if "stan_licznika_value" not in st.session_state:
+    st.session_state["stan_licznika_value"] = None
+
+# --- FUNKCJE OBSŁUGI BAZY DANYCH DLA ODCZYTÓW RĘCZNYCH ---
+def init_manual_db():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS odczyty_manualne (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            czas DATETIME NOT NULL,
+            stan_licznika REAL NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def insert_manual_read(stan: float):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO odczyty_manualne (czas, stan_licznika) VALUES (?, ?)",
+        (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), stan)
+    )
+    conn.commit()
+    conn.close()
+
+def load_manual_data() -> pd.DataFrame:
+    conn = sqlite3.connect(DB_FILE)
+    try:
+        df_m = pd.read_sql_query("SELECT czas, stan_licznika FROM odczyty_manualne ORDER BY czas ASC", conn)
+        if not df_m.empty:
+            df_m["czas"] = pd.to_datetime(df_m["czas"])
+    except Exception:
+        df_m = pd.DataFrame(columns=["czas", "stan_licznika"])
+    finally:
+        conn.close()
+    return df_m
+
+init_manual_db()
 
 # --- SŁOWNIK METADANYCH PARAMETRÓW ---
 PARAM_INFO = {
@@ -60,19 +101,18 @@ PARAM_INFO = {
     "flow_rate": {"label": "Przepływ", "desc": "Przepływ wody w obiegu hydraulicznym"},
     "m_eev": {"label": "Zawór EEV główny", "desc": "Pozycja otwarcia głównego elektronicznego zaworu rozprężnego"},
     "valve": {"label": "Zawór 3-drożny", "desc": "Stan zaworu przełączającego (0 = CO, 1 = CWU)"},
-    "defrost": {"label": "Odszranianie", "desc": "Cykl automatycznego odszraniania parownika"},
-    "total_energy_kwh": {"label": "Stan Licznika Energia", "desc": "Ręcznie wprowadzony stan fizycznego licznika energii"}
+    "defrost": {"label": "Odszranianie", "desc": "Cykl automatycznego odszraniania parownika"}
 }
 
 def get_param_label(code: str) -> str:
     info = PARAM_INFO.get(code)
     return f"{info['label']} ({code})" if info else code
 
-# --- PANEL BOCZNY: KONFIGURACJA ODCZYTU ---
+# --- PANEL BOCZNY ---
 st.sidebar.header("⏱️ Zakres danych")
 time_range_map = {
     "Ostatnie 6 godzin": 6,
-    "1 dzień": 24,
+    "Ostatnie 24 godziny": 24,
     "Ostatnie 3 dni": 72,
     "Ostatnie 7 dni": 168
 }
@@ -90,56 +130,20 @@ selected_resample = st.sidebar.selectbox("Agregacja punktów:", list(resample_ma
 resample_rule = resample_map[selected_resample]
 
 st.sidebar.header("⚙️ Kalkulator COP")
-# Zmieniono domyślną wartość cos φ na 1.00
-cos_phi = st.sidebar.slider("Współczynnik mocy (cos φ)", 0.80, 1.00, 1.00, 0.01)
+cos_phi = st.sidebar.slider("Współczynnik mocy (cos φ)", 0.80, 1.00, 0.92, 0.01)
 ac_curr_div = st.sidebar.selectbox("Dzielnik prądu (ac_curr)", [1, 10, 100], index=1)
 
+# === KALIBRACJA STRAT ===
 st.sidebar.header("🛠️ Kalibracja strat mocy")
 standby_power_w = st.sidebar.number_input("Pobór w spoczynku (elektronika) [W]", min_value=0, max_value=100, value=20, step=5)
 active_power_w = st.sidebar.number_input("Pobór pracy (wentylator, pompa obieg.) [W]", min_value=0, max_value=300, value=140, step=10)
 
-# --- PANEL BOCZNY: FORMULARZ RĘCZNEGO ODCZYTU LICZNIKA ---
-st.sidebar.markdown("---")
-st.sidebar.header("📝 Ręczny odczyt licznika")
-
-with st.sidebar.form("manual_energy_form", clear_on_submit=False):
-    now = datetime.now()
-    
-    dev_id_input = st.text_input("ID Urządzenia", value="licznikreczny123")
-    energy_val = st.number_input("Stan licznika [kWh]", min_value=0.0, step=0.1, format="%.2f")
-    
-    col_date, col_time = st.columns(2)
-    with col_date:
-        input_date = st.date_input("Data", value=now.date())
-    with col_time:
-        input_time = st.time_input("Godzina", value=now.time())
-
-    submit_btn = st.form_submit_button("💾 Zapisz do bazy")
-
-    if submit_btn:
-        selected_dt = datetime.combine(input_date, input_time)
-        selected_ts = int(selected_dt.timestamp())
-        
-        success = save_manual_reading(
-            device_id=dev_id_input,
-            code="total_energy_kwh",
-            val_num=energy_val,
-            timestamp=selected_ts
-        )
-        
-        if success:
-            st.sidebar.success(f"Zapisano odczyt dla '{dev_id_input}': {energy_val} kWh ({selected_dt.strftime('%Y-%m-%d %H:%M:%S')})")
-            st.rerun()
-        else:
-            st.sidebar.error("Błąd zapisu danych do bazy.")
-
-# --- POBIERANIE DANYCH TELEMETRII ---
 def load_data(hours: int) -> pd.DataFrame:
     conn = sqlite3.connect(DB_FILE)
     query = f"""
         SELECT 
             datetime(timestamp, 'unixepoch', 'localtime') as czas,
-            code, val_num, val_str, device_id
+            code, val_num, val_str
         FROM telemetry
         WHERE timestamp >= strftime('%s', 'now', '-{hours} hours')
         ORDER BY timestamp ASC
@@ -148,31 +152,15 @@ def load_data(hours: int) -> pd.DataFrame:
     conn.close()
     return df_data
 
-# --- POBIERANIE WSZYSTKICH ODCZYTÓW RĘCZNYCH LICZNIKA ---
-def load_manual_readings() -> pd.DataFrame:
-    conn = sqlite3.connect(DB_FILE)
-    query = """
-        SELECT 
-            datetime(timestamp, 'unixepoch', 'localtime') as czas,
-            val_num as stan_licznika,
-            device_id
-        FROM telemetry
-        WHERE code = 'total_energy_kwh' AND val_num IS NOT NULL
-        ORDER BY timestamp ASC
-    """
-    df_man = pd.read_sql_query(query, conn)
-    conn.close()
-    return df_man
-
 if st.button("🔄 Odśwież dane"):
     st.rerun()
 
 df = load_data(hours_back)
 
 if df.empty:
-    st.info(f"Brak danych z okresu '{selected_range}' w bazie.")
+    st.info(f"Brak danych z ostatnich {hours_back} godzin w bazie.")
 else:
-    # SCALANIE WARTOŚCI NUMERYCZNYCH I TEKSTOWYCH
+    # KOLEKCJA WARTOSCI: Scalanie val_num oraz val_str
     df["val_combined"] = df["val_num"]
     bool_map = {
         "True": 1.0, "true": 1.0, "1": 1.0, "1.0": 1.0,
@@ -181,7 +169,6 @@ else:
     mask_str = df["val_combined"].isna() & df["val_str"].notna()
     df.loc[mask_str, "val_combined"] = df.loc[mask_str, "val_str"].map(bool_map)
 
-    # PIVOTOWANIE DANYCH
     df_pivot = df.pivot_table(index="czas", columns="code", values="val_combined", aggfunc="first").reset_index()
     df_pivot["czas"] = pd.to_datetime(df_pivot["czas"])
     df_pivot = df_pivot.sort_values("czas")
@@ -193,6 +180,7 @@ else:
         else:
             df_pivot[col] = df_pivot[col].ffill()
 
+    # Domyślnie zawór = 0 (CO) jeśli brak danych
     df_pivot["valve"] = df_pivot["valve"].fillna(0).astype(float)
 
     if resample_rule:
@@ -221,13 +209,15 @@ else:
     df_pivot["flow_m3h"] = df_pivot["flow_rate"] / 10.0
     df_pivot["delta_t"] = df_pivot["out_water_temp"] - df_pivot["in_water_temp"]
 
+    # Korekta Mocy Elektrycznej
     raw_p_el_kw = (df_pivot["ac_vol"] * curr_a * cos_phi) / 1000.0
-    is_active = raw_p_el_kw > 0.1
+    is_active = raw_p_el_kw > 0.1 # Zakładamy, że sprężarka pracuje przy > 100W
     correction_kw = (standby_power_w / 1000.0) + np.where(is_active, active_power_w / 1000.0, 0.0)
     
     df_pivot["P_el_kw"] = raw_p_el_kw + correction_kw
     df_pivot["P_th_kw"] = (df_pivot["flow_m3h"] * 4.186 * df_pivot["delta_t"]) / 3.6
     
+    # Zabezpieczenie COP przed liczeniem na samym stand-by
     df_pivot["COP"] = np.where(is_active, df_pivot["P_th_kw"] / df_pivot["P_el_kw"], np.nan)
 
     invalid_mask = (df_pivot["P_th_kw"] <= 0) | (df_pivot["COP"] < 0.5) | (df_pivot["COP"] > 10.0)
@@ -237,6 +227,7 @@ else:
     # --- ENERGIA I SCOP ---
     df_pivot["dt_hours"] = df_pivot["czas"].diff().dt.total_seconds().fillna(0) / 3600.0
     
+    # Całkowanie schodkowe dla surowych danych
     if resample_rule:
         df_pivot["E_th_kwh"] = df_pivot["P_th_kw"] * df_pivot["dt_hours"]
         df_pivot["E_el_kwh"] = df_pivot["P_el_kw"] * df_pivot["dt_hours"]
@@ -263,7 +254,7 @@ else:
     df_pivot["defrost_num"] = df_pivot["defrost"].fillna(0).apply(lambda x: 1 if x else 0)
     df_pivot["defrost_start"] = ((df_pivot["defrost_num"] == 1) & (df_pivot["defrost_num"].shift(1, fill_value=0) == 0)).astype(int)
 
-    # AGREGACJA DZIENNA (WYKLICZENIA POMPY)
+    # AGREGACJA DZIENNA
     df_pivot["dzień"] = df_pivot["czas"].dt.date
     df_pivot["E_el_co_row"] = np.where(df_pivot["Tryb"] == "CO", df_pivot["E_el_kwh"], 0.0)
     df_pivot["E_el_cwu_row"] = np.where(df_pivot["Tryb"] == "CWU", df_pivot["E_el_kwh"], 0.0)
@@ -289,15 +280,9 @@ else:
     avg_amb_temp = df_pivot["amb_temp"].mean()
     total_defrosts = int(daily_df["defrost_start"].sum())
 
-    # --- ZAKŁADKI PANELU ---
-    tab_main, tab_scop, tab_diag, tab_manual = st.tabs([
-        "📊 Panel Główny", 
-        "🏆 Bilans Energetyczny & SCOP", 
-        "🏥 Diagnostyka Pompy",
-        "📝 Odczyty Ręczne"
-    ])
+    tab_main, tab_scop, tab_diag, tab_manual = st.tabs(["📊 Panel Główny", "🏆 Bilans Energetyczny & SCOP", "🏥 Diagnostyka Pompy", "🧮 Odczyty Ręczne"])
 
-    # ZAKŁADKA 1: PANEL GŁÓWNY
+    # ZAKŁADKA 1
     with tab_main:
         latest_df = df.drop_duplicates(subset=["code"], keep="last")
         def get_val(c):
@@ -338,7 +323,7 @@ else:
             markers=(resample_rule is not None)
         )
         fig_cop.update_layout(hovermode="x unified")
-        st.plotly_chart(fig_cop, width="stretch")
+        st.plotly_chart(fig_cop, use_container_width=True)
 
         st.subheader("📈 Przebieg wybranych parametrów")
         all_codes = df["code"].unique().tolist()
@@ -360,7 +345,7 @@ else:
                 title="Wykres wartości parametrów w czasie"
             )
             fig_temp.update_layout(hovermode="x unified")
-            st.plotly_chart(fig_temp, width="stretch")
+            st.plotly_chart(fig_temp, use_container_width=True)
 
     # ZAKŁADKA 2: BILANS ENERGETYCZNY & SCOP
     with tab_scop:
@@ -394,7 +379,7 @@ else:
             go.Bar(name='Ciepło oddane [kWh]', x=['Ogrzewanie CO', 'Ciepła Woda CWU'], y=[e_th_co, e_th_cwu], marker_color='#E74C3C')
         ])
         fig_bar.update_layout(barmode='group', title="Porównanie energii pobranej do oddanej według trybu pracy")
-        st.plotly_chart(fig_bar, width="stretch")
+        st.plotly_chart(fig_bar, use_container_width=True)
 
         st.markdown("---")
         st.subheader("📅 Dzienny Bilans Zużycia, Temperatur i Defrostów")
@@ -405,7 +390,7 @@ else:
         daily_display["Prąd CWU [kWh]"] = daily_display["Prąd CWU [kWh]"].round(2)
         daily_display["Prąd Łącznie [kWh]"] = daily_display["Prąd Łącznie [kWh]"].round(2)
         daily_display["SCOP Dzienny"] = daily_display["SCOP Dzienny"].round(2)
-        st.dataframe(daily_display, width="stretch", hide_index=True)
+        st.dataframe(daily_display, use_container_width=True, hide_index=True)
 
     # ZAKŁADKA 3: DIAGNOSTYKA
     with tab_diag:
@@ -452,7 +437,7 @@ else:
         fig_dt.add_trace(go.Scatter(x=df_pivot["czas"], y=df_pivot["delta_t"], mode='lines', name='Różnica ΔT (°C)', line=dict(color='#3498DB', width=2)))
         fig_dt.add_hrect(y0=3.0, y1=7.0, fillcolor="Green", opacity=0.15, line_width=0, annotation_text="Strefa optymalna (3 - 7 °C)", annotation_position="top left")
         fig_dt.update_layout(hovermode="x unified", xaxis_title="Czas", yaxis_title="ΔT (°C)")
-        st.plotly_chart(fig_dt, width="stretch")
+        st.plotly_chart(fig_dt, use_container_width=True)
 
         st.subheader("2️⃣ Bezpieczeństwo Sprężarki (Temperatura Tłoczenia Discharge)")
         fig_disc = go.Figure()
@@ -460,84 +445,60 @@ else:
         fig_disc.add_trace(go.Scatter(x=df_pivot["czas"], y=df_pivot["comp_freq"], mode='lines', name='Obroty sprężarki (Hz)', line=dict(color='#9B59B6', width=1.5, dash='dot')))
         fig_disc.add_hline(y=90.0, line_dash="dash", line_color="Red", annotation_text="Krytyczne 90°C", annotation_position="bottom right")
         fig_disc.update_layout(hovermode="x unified", xaxis_title="Czas", yaxis_title="Wartość")
-        st.plotly_chart(fig_disc, width="stretch")
+        st.plotly_chart(fig_disc, use_container_width=True)
 
-    # ZAKŁADKA 4: RĘCZNE ODCZYTY LICZNIKA
+    # ZAKŁADKA 4: ODCZYTY RĘCZNE & INTERPOLACJA
     with tab_manual:
-        st.header("📝 Ręczne Odczyty Licznika Energii")
+        st.header("🧮 Ręczne Odczyty Licznika Energii")
         
-        df_manual = load_manual_readings()
+        col_f1, col_f2 = st.columns([1, 2])
+        
+        with col_f1:
+            st.subheader("Dodaj nowy odczyt")
+            with st.form("form_dodaj_odczyt", clear_on_submit=True):
+                stan_input = st.number_input(
+                    "Stan licznika (kWh):",
+                    value=st.session_state["stan_licznika_value"],
+                    min_value=0.0,
+                    step=0.1,
+                    format="%.2f",
+                    placeholder="Wpisz wartość..."
+                )
+                
+                submit_btn = st.form_submit_button("Zapisz do bazy")
 
-        if df_manual.empty:
-            st.info("Brak wprowadzonych ręcznych odczytów licznika w bazie danych.")
-        else:
-            df_m_table = df_manual.copy()
-            df_m_table["czas"] = pd.to_datetime(df_m_table["czas"])
-            
-            # Obliczenie różnicy stanów licznika oraz czasu między odczytami
-            df_m_table["Różnica [kWh]"] = df_m_table["stan_licznika"].diff().round(2)
-            
-            st.subheader("📋 Tabela zarejestrowanych odczytów")
-            
-            display_table = df_m_table.sort_values("czas", ascending=False).rename(columns={
-                "czas": "Data i czas",
-                "stan_licznika": "Stan licznika [kWh]",
-                "device_id": "ID Urządzenia"
-            })[["Data i czas", "Stan licznika [kWh]", "Różnica [kWh]", "ID Urządzenia"]]
-            
-            st.dataframe(display_table, width="stretch", hide_index=True)
+                if submit_btn:
+                    # Zabezpieczenie 1: Kontrola pustej / ujemnej wartości
+                    if stan_input is None or stan_input <= 0:
+                        st.error("⚠️ Wprowadź poprawną, dodatnią wartość stanu licznika!")
+                    else:
+                        # Zapis do bazy
+                        insert_manual_read(stan_input)
+                        st.success(f"✅ Zapisano odczyt: {stan_input:.2f} kWh")
+                        
+                        # Zabezpieczenie 2: Czyszczenie pola i przeładowanie aplikacji
+                        st.session_state["stan_licznika_value"] = None
+                        st.rerun()
 
-            st.markdown("---")
-            st.subheader("📈 Dzienne Zużycie: Licznik Ręczny (Estymowane) vs Pompa Ciepła")
+        with col_f2:
+            st.subheader("Historia i interpolowane zużycie dzienne")
+            df_m_table = load_manual_data()
 
-            if len(df_m_table) >= 2:
-                # Interpolacja liniowa dla brakujących dni w odczytach ręcznych
-                df_interp = df_m_table.set_index("czas")[["stan_licznika"]].resample("D").asfreq()
+            if not df_m_table.empty and len(df_m_table) >= 2:
+                # ZABEZPIECZENIE PRZED DUPLIKATAMI: Zachowanie ostatniego odczytu dla tego samego 'czas'
+                df_m_unique = df_m_table.groupby("czas", as_index=False)["stan_licznika"].last()
+
+                # Resampling i interpolacja
+                df_interp = df_m_unique.set_index("czas")[["stan_licznika"]].resample("D").asfreq()
                 df_interp["stan_interpolowany"] = df_interp["stan_licznika"].interpolate(method="linear")
                 df_interp["dzienne_zuzycie_licznik"] = df_interp["stan_interpolowany"].diff().round(2)
                 
                 df_interp = df_interp.reset_index()
                 df_interp["dzień"] = df_interp["czas"].dt.date
 
-                # Połączenie z dziennym zużyciem wyliczonym przez pompę
-                merged_daily = pd.merge(
-                    df_interp[["dzień", "dzienne_zuzycie_licznik"]].dropna(),
-                    daily_df[["dzień", "E_el_total"]],
-                    on="dzień",
-                    how="outer"
-                ).sort_values("dzień")
-
-                merged_daily["E_el_total"] = merged_daily["E_el_total"].round(2)
-
-                fig_manual = go.Figure()
-
-                # Słupki estymowanego dziennego zużycia z licznika
-                fig_manual.add_trace(go.Bar(
-                    x=merged_daily["dzień"],
-                    y=merged_daily["dzienne_zuzycie_licznik"],
-                    name="Licznik Ręczny (Estymowane dzienne)",
-                    marker_color="#3498DB",
-                    opacity=0.75
-                ))
-
-                # Linia wyliczonego dziennego zużycia przez pompę
-                fig_manual.add_trace(go.Scatter(
-                    x=merged_daily["dzień"],
-                    y=merged_daily["E_el_total"],
-                    name="Wyliczone przez pompę (P_el)",
-                    mode="lines+markers",
-                    line=dict(color="#E74C3C", width=3),
-                    marker=dict(size=8)
-                ))
-
-                fig_manual.update_layout(
-                    title="Porównanie Dziennego Zużycia Energii [kWh]",
-                    xaxis_title="Data",
-                    yaxis_title="Energia [kWh]",
-                    hovermode="x unified",
-                    barmode="overlay"
-                )
-
-                st.plotly_chart(fig_manual, width="stretch")
+                st.dataframe(df_interp[["dzień", "stan_licznika", "stan_interpolowany", "dzienne_zuzycie_licznik"]], use_container_width=True)
+            elif not df_m_table.empty:
+                st.dataframe(df_m_table, use_container_width=True)
+                st.info("Wprowadź co najmniej 2 odczyty w różnych dniach, aby obliczyć interpolację i dzienne zużycie.")
             else:
-                st.warning("Do wygenerowania wykresu dziennego zużycia i estymacji potrzebne są co najmniej 2 odczyty licznika.")
+                st.info("Brak wpisów w bazie danych odczytów ręcznych.")
