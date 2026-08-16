@@ -1,5 +1,5 @@
 import sqlite3
-from datetime import datetime, time as dtime
+from datetime import datetime
 import pandas as pd
 import numpy as np
 import streamlit as st
@@ -11,16 +11,16 @@ st.set_page_config(page_title="Monitor Pompy Ciepła", layout="wide", page_icon=
 
 st.markdown("""
 <style>
-/* 1. Wygląd kafelków dla wszystkich metryk */
+/* 1. Wygląd kafelków (tło, ramka, zaokrąglenia) dla wszystkich metryk */
 [data-testid="stMetric"] {
-    background-color: #1E1E1E;
+    background-color: #1E1E1E; /* Ciemne tło kafelka */
     border: 1px solid #333;
     border-radius: 10px;
     padding: 15px;
     box-shadow: 2px 2px 10px rgba(0,0,0,0.3);
 }
 
-/* 2. Wymuszenie siatki na telefonach */
+/* 2. Wymuszenie siatki (np. po 2 kafelki w rzędzie) tylko na telefonach */
 @media (max-width: 768px) {
     [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) {
         display: grid !important;
@@ -38,7 +38,7 @@ st.markdown("""
 st.title("🔥 Panel Monitorowania i Diagnostyki Pompy Ciepła")
 
 DB_FILE = "/data/tuya_telemetry.db"
-DEFAULT_DEV_ID = "bf874f7ae72aca1fc23op0"
+MANUAL_METER_DEV_ID = "licznikRęczny"
 
 # --- SŁOWNIK METADANYCH PARAMETRÓW ---
 PARAM_INFO = {
@@ -65,41 +65,43 @@ def get_param_label(code: str) -> str:
     info = PARAM_INFO.get(code)
     return f"{info['label']} ({code})" if info else code
 
-# --- FUNKCJE BAZODANOWE DLA EDYCJI I ODCZYTU ---
-def get_db_connection():
-    conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-def update_telemetry_record(rec_id: int, new_ts: int, code: str, val_num: float, val_str: str):
-    conn = sqlite3.connect(DB_FILE)
-    cur = conn.cursor()
-    cur.execute("""
-        UPDATE telemetry
-        SET timestamp = ?, code = ?, val_num = ?, val_str = ?
-        WHERE id = ?
-    """, (new_ts, code, val_num, val_str, rec_id))
-    conn.commit()
-    conn.close()
-
-def insert_telemetry_record(ts: int, dev_id: str, code: str, val_num: float, val_str: str):
+# --- FUNKCJE DLA WPISÓW RĘCZNYCH (licznikRęczny) ---
+def insert_manual_record(ts: int, code: str, val_num: float, val_str: str):
+    """Zapisuje nowy wpis ręczny oznaczony device_id = MANUAL_METER_DEV_ID."""
     conn = sqlite3.connect(DB_FILE)
     cur = conn.cursor()
     cur.execute("""
         INSERT INTO telemetry (timestamp, device_id, code, val_num, val_str)
         VALUES (?, ?, ?, ?, ?)
-    """, (ts, dev_id, code, val_num, val_str))
+    """, (ts, MANUAL_METER_DEV_ID, code, val_num, val_str))
     conn.commit()
     conn.close()
 
-def delete_telemetry_record(rec_id: int):
+def update_manual_record(rec_id: int, new_ts: int, code: str, val_num: float, val_str: str):
+    """Edytuje wpis wyłącznie gdy device_id = MANUAL_METER_DEV_ID."""
     conn = sqlite3.connect(DB_FILE)
     cur = conn.cursor()
-    cur.execute("DELETE FROM telemetry WHERE id = ?", (rec_id,))
+    cur.execute("""
+        UPDATE telemetry
+        SET timestamp = ?, code = ?, val_num = ?, val_str = ?
+        WHERE id = ? AND device_id = ?
+    """, (new_ts, code, val_num, val_str, rec_id, MANUAL_METER_DEV_ID))
     conn.commit()
     conn.close()
 
-def fetch_records_for_edit(hours: int, code_filter: str = None) -> pd.DataFrame:
+def delete_manual_record(rec_id: int):
+    """Usuwa wpis wyłącznie gdy device_id = MANUAL_METER_DEV_ID."""
+    conn = sqlite3.connect(DB_FILE)
+    cur = conn.cursor()
+    cur.execute("""
+        DELETE FROM telemetry 
+        WHERE id = ? AND device_id = ?
+    """, (rec_id, MANUAL_METER_DEV_ID))
+    conn.commit()
+    conn.close()
+
+def fetch_manual_records(hours: int, code_filter: str = None) -> pd.DataFrame:
+    """Pobiera wyłącznie wpisy dodane przez formularz ręczny."""
     conn = sqlite3.connect(DB_FILE)
     query = f"""
         SELECT 
@@ -111,7 +113,8 @@ def fetch_records_for_edit(hours: int, code_filter: str = None) -> pd.DataFrame:
             val_num,
             val_str
         FROM telemetry
-        WHERE timestamp >= strftime('%s', 'now', '-{hours} hours')
+        WHERE device_id = '{MANUAL_METER_DEV_ID}'
+          AND timestamp >= strftime('%s', 'now', '-{hours} hours')
     """
     if code_filter and code_filter != "Wszystkie":
         query += f" AND code = '{code_filter}'"
@@ -146,6 +149,7 @@ st.sidebar.header("⚙️ Kalkulator COP")
 cos_phi = st.sidebar.slider("Współczynnik mocy (cos φ)", 0.80, 1.00, 0.92, 0.01)
 ac_curr_div = st.sidebar.selectbox("Dzielnik prądu (ac_curr)", [1, 10, 100], index=1)
 
+# === Kalibracja strat ===
 st.sidebar.header("🛠️ Kalibracja strat mocy")
 standby_power_w = st.sidebar.number_input("Pobór w spoczynku (elektronika) [W]", min_value=0, max_value=100, value=20, step=5)
 active_power_w = st.sidebar.number_input("Pobór pracy (wentylator, pompa obieg.) [W]", min_value=0, max_value=300, value=140, step=10)
@@ -172,6 +176,7 @@ df = load_data(hours_back)
 if df.empty:
     st.info(f"Brak danych z ostatnich {hours_back} godzin w bazie.")
 else:
+    # KOLEKCJA WARTOSCI: Scalanie val_num oraz val_str
     df["val_combined"] = df["val_num"]
     bool_map = {
         "True": 1.0, "true": 1.0, "1": 1.0, "1.0": 1.0,
@@ -191,6 +196,7 @@ else:
         else:
             df_pivot[col] = df_pivot[col].ffill()
 
+    # Domyślnie zawór = 0 (CO) jeśli brak danych
     df_pivot["valve"] = df_pivot["valve"].fillna(0).astype(float)
 
     if resample_rule:
@@ -219,6 +225,7 @@ else:
     df_pivot["flow_m3h"] = df_pivot["flow_rate"] / 10.0
     df_pivot["delta_t"] = df_pivot["out_water_temp"] - df_pivot["in_water_temp"]
 
+    # Korekta Mocy Elektrycznej
     raw_p_el_kw = (df_pivot["ac_vol"] * curr_a * cos_phi) / 1000.0
     is_active = raw_p_el_kw > 0.1
     correction_kw = (standby_power_w / 1000.0) + np.where(is_active, active_power_w / 1000.0, 0.0)
@@ -232,6 +239,7 @@ else:
     df_pivot.loc[invalid_mask, "COP"] = np.nan
     df_pivot.loc[df_pivot["P_th_kw"] < 0, "P_th_kw"] = 0.0
 
+    # --- ENERGIA I SCOP ---
     df_pivot["dt_hours"] = df_pivot["czas"].diff().dt.total_seconds().fillna(0) / 3600.0
     
     if resample_rule:
@@ -286,7 +294,6 @@ else:
     avg_amb_temp = df_pivot["amb_temp"].mean()
     total_defrosts = int(daily_df["defrost_start"].sum())
 
-    # --- ZAKŁADKI GŁÓWNE ---
     tab_main, tab_scop, tab_diag, tab_editor = st.tabs([
         "📊 Panel Główny", 
         "🏆 Bilans Energetyczny & SCOP", 
@@ -459,41 +466,39 @@ else:
         fig_disc.update_layout(hovermode="x unified", xaxis_title="Czas", yaxis_title="Wartość")
         st.plotly_chart(fig_disc, width="stretch")
 
-    # ZAKŁADKA 4: RĘCZNE WPISY I EDYCJA DANYCH
+    # ZAKŁADKA 4: RĘCZNE WPISY I KOREKTY (TYLKO WPISY Z FORMULARZA)
     with tab_editor:
-        st.header("✍️ Zarządzanie Wpisami i Korekta Danych")
-        st.caption("Umożliwia ręczne dodawanie brakujących punktów pomiarowych, poprawianie błędnych odczytów oraz usuwanie zakłóceń w bazie SQLite.")
+        st.header("✍️ Wpisy Ręczne i Korekty")
+        st.info(f"🔒 **Ochrona Telemetrii:** Formularz modyfikuje wyłącznie wpisy oznaczone jako `device_id = '{MANUAL_METER_DEV_ID}'`. Dane sprzętowe pompy cieplnej są zabezpieczone przed nadpisaniem.")
 
         col_left, col_right = st.columns([1, 1])
 
-        # --- SEKCJA: EDYCJA / USUWANIE ISTNIEJĄCEGO WPISU ---
+        # --- SEKCJA LEWA: EDYCJA / USUWANIE WPISÓW RĘCZNYCH ---
         with col_left:
-            st.subheader("✏️ Edytuj lub usuń istniejący wpis")
+            st.subheader("✏️ Edytuj lub usuń wpis ręczny")
             
             filter_code = st.selectbox(
-                "Filtruj wpisy wg parametru:",
+                "Filtruj wpisy ręczne wg parametru:",
                 ["Wszystkie"] + list(PARAM_INFO.keys()),
                 format_func=lambda x: "Wszystkie" if x == "Wszystkie" else get_param_label(x),
-                key="filter_code_select"
+                key="filter_manual_code"
             )
             
-            df_edit_list = fetch_records_for_edit(hours_back, filter_code)
+            df_manual_list = fetch_manual_records(hours_back, filter_code)
 
-            if df_edit_list.empty:
-                st.info("Brak wpisów spełniających kryteria w wybranym oknie czasowym.")
+            if df_manual_list.empty:
+                st.warning("Brak wpisów ręcznych w wybranym zakresie czasu. Dodaj pierwszy wpis w formularzu po prawej stronie.")
             else:
-                # Opcje do wyboru w formacie: [ID: 123] Czas | Parametr | Wartość
                 options_map = {}
-                for _, r in df_edit_list.iterrows():
+                for _, r in df_manual_list.iterrows():
                     val_display = r["val_num"] if pd.notnull(r["val_num"]) else r["val_str"]
                     label_str = f"[ID: {r['id']}] {r['czas']} | {r['code']} = {val_display}"
                     options_map[label_str] = r
 
-                selected_label = st.selectbox("Wybierz rekord do edycji:", list(options_map.keys()))
+                selected_label = st.selectbox("Wybierz rekord do modyfikacji:", list(options_map.keys()))
                 selected_row = options_map[selected_label]
 
-                # Formularz edycji wybranego rekordu
-                with st.form("edit_record_form"):
+                with st.form("edit_manual_record_form"):
                     row_dt = pd.to_datetime(selected_row["czas"])
                     edit_date = st.date_input("Data pomiaru", value=row_dt.date())
                     edit_time = st.time_input("Godzina pomiaru", value=row_dt.time())
@@ -515,10 +520,9 @@ else:
                     if save_changes:
                         combined_dt = datetime.combine(edit_date, edit_time)
                         new_timestamp = int(combined_dt.timestamp())
-                        
                         final_val_str = edit_val_str.strip() if edit_val_str.strip() else None
                         
-                        update_telemetry_record(
+                        update_manual_record(
                             rec_id=int(selected_row["id"]),
                             new_ts=new_timestamp,
                             code=edit_code,
@@ -529,19 +533,19 @@ else:
                         st.rerun()
 
                     if delete_entry:
-                        delete_telemetry_record(int(selected_row["id"]))
-                        st.warning(f"🗑️ Usunięto wpis ID: {selected_row['id']}")
+                        delete_manual_record(int(selected_row["id"]))
+                        st.warning(f"🗑️ Usunięto wpis ręczny ID: {selected_row['id']}")
                         st.rerun()
 
-        # --- SEKCJA: DODAWANIE NOWEGO WPISU ---
+        # --- SEKCJA PRAWA: DODAWANIE NOWEGO WPISU RĘCZNEGO ---
         with col_right:
             st.subheader("➕ Dodaj nowy wpis ręczny")
             
             with st.form("add_manual_entry_form"):
-                new_date = st.date_input("Data wpisu", value=datetime.now().date(), key="new_date_in")
-                new_time = st.time_input("Godzina wpisu", value=datetime.now().time(), key="new_time_in")
+                new_date = st.date_input("Data wpisu", value=datetime.now().date(), key="new_manual_date")
+                new_time = st.time_input("Godzina wpisu", value=datetime.now().time(), key="new_manual_time")
                 
-                new_code = st.selectbox("Wybierz parametr", list(PARAM_INFO.keys()), format_func=get_param_label, key="new_code_in")
+                new_code = st.selectbox("Wybierz parametr", list(PARAM_INFO.keys()), format_func=get_param_label, key="new_manual_code")
                 new_val_type = st.radio("Typ wartości:", ["Liczbowa (np. temp, prąd, moc)", "Tekst / Status"], horizontal=True)
 
                 if new_val_type == "Liczbowa (np. temp, prąd, moc)":
@@ -551,27 +555,28 @@ else:
                     new_val_num = None
                     new_val_str = st.text_input("Wartość tekstowa (np. True, False, CO, CWU)")
 
-                add_submit = st.form_submit_button("➕ Dodaj wpis do bazy", use_container_width=True)
+                add_submit = st.form_submit_button("➕ Zapisz wpis ręczny", use_container_width=True)
 
                 if add_submit:
                     combined_new_dt = datetime.combine(new_date, new_time)
                     new_ts = int(combined_new_dt.timestamp())
 
-                    insert_telemetry_record(
+                    insert_manual_record(
                         ts=new_ts,
-                        dev_id=DEFAULT_DEV_ID,
                         code=new_code,
                         val_num=new_val_num,
                         val_str=new_val_str
                     )
-                    st.success(f"✅ Dodano nowy wpis: {new_code} = {new_val_num if new_val_num is not None else new_val_str}")
+                    st.success(f"✅ Dodano wpis ręczny ({MANUAL_METER_DEV_ID}): {new_code} = {new_val_num if new_val_num is not None else new_val_str}")
                     st.rerun()
 
-        # --- PODGLĄD TABELI WPISÓW ---
+        # --- SEKCJA DOLNA: HISTORIA WPISÓW RĘCZNYCH ---
         st.markdown("---")
-        st.subheader("📋 Ostatnie 200 wpisów w wybranym oknie czasowym")
-        records_df = fetch_records_for_edit(hours_back)
+        st.subheader("📋 Lista zarejestrowanych wpisów ręcznych")
+        records_df = fetch_manual_records(hours_back)
         if not records_df.empty:
             records_df["Parametr"] = records_df["code"].map(lambda c: PARAM_INFO.get(c, {}).get("label", c))
             display_cols = ["id", "czas", "Parametr", "code", "val_num", "val_str", "device_id"]
             st.dataframe(records_df[display_cols], use_container_width=True, hide_index=True)
+        else:
+            st.caption("Brak wpisów ręcznych w wybranym horyzoncie czasowym.")
