@@ -9,21 +9,21 @@ from datetime import datetime
 # Import funkcji zapisu odczytów ręcznych z db.py
 from db import save_manual_reading
 
-# --- KONFIGURACJA STRONY ---
+# --- KONFIGURACJA STRONY (ZAWSZE NA SAMYM POCZĄTKU STREAMLIT) ---
 st.set_page_config(page_title="Monitor Pompy Ciepła", layout="wide", page_icon="🔥")
 
 st.markdown("""
 <style>
-/* 1. Wygląd kafelków (tło, ramka, zaokrąglenia) dla wszystkich metryk */
+/* 1. Wygląd kafelków dla wszystkich metryk */
 [data-testid="stMetric"] {
-    background-color: #1E1E1E; /* Ciemne tło kafelka */
+    background-color: #1E1E1E;
     border: 1px solid #333;
     border-radius: 10px;
     padding: 15px;
     box-shadow: 2px 2px 10px rgba(0,0,0,0.3);
 }
 
-/* 2. Wymuszenie siatki (np. po 2 kafelki w rzędzie) tylko na telefonach */
+/* 2. Wymuszenie siatki po 2 kafelki w rzędzie na telefonach */
 @media (max-width: 768px) {
     [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) {
         display: grid !important;
@@ -37,7 +37,6 @@ st.markdown("""
 }
 </style>
 """, unsafe_allow_html=True)
-
 
 st.title("🔥 Panel Monitorowania i Diagnostyki Pompy Ciepła")
 
@@ -73,7 +72,7 @@ def get_param_label(code: str) -> str:
 st.sidebar.header("⏱️ Zakres danych")
 time_range_map = {
     "Ostatnie 6 godzin": 6,
-    "Ostatnie 24 godziny": 24,
+    "1 dzień": 24,
     "Ostatnie 3 dni": 72,
     "Ostatnie 7 dni": 168
 }
@@ -91,7 +90,8 @@ selected_resample = st.sidebar.selectbox("Agregacja punktów:", list(resample_ma
 resample_rule = resample_map[selected_resample]
 
 st.sidebar.header("⚙️ Kalkulator COP")
-cos_phi = st.sidebar.slider("Współczynnik mocy (cos φ)", 0.80, 1.00, 0.92, 0.01)
+# Zmieniono domyślną wartość cos φ na 1.00
+cos_phi = st.sidebar.slider("Współczynnik mocy (cos φ)", 0.80, 1.00, 1.00, 0.01)
 ac_curr_div = st.sidebar.selectbox("Dzielnik prądu (ac_curr)", [1, 10, 100], index=1)
 
 st.sidebar.header("🛠️ Kalibracja strat mocy")
@@ -133,7 +133,7 @@ with st.sidebar.form("manual_energy_form", clear_on_submit=False):
         else:
             st.sidebar.error("Błąd zapisu danych do bazy.")
 
-
+# --- POBIERANIE DANYCH TELEMETRII ---
 def load_data(hours: int) -> pd.DataFrame:
     conn = sqlite3.connect(DB_FILE)
     query = f"""
@@ -148,13 +148,29 @@ def load_data(hours: int) -> pd.DataFrame:
     conn.close()
     return df_data
 
+# --- POBIERANIE WSZYSTKICH ODCZYTÓW RĘCZNYCH LICZNIKA ---
+def load_manual_readings() -> pd.DataFrame:
+    conn = sqlite3.connect(DB_FILE)
+    query = """
+        SELECT 
+            datetime(timestamp, 'unixepoch', 'localtime') as czas,
+            val_num as stan_licznika,
+            device_id
+        FROM telemetry
+        WHERE code = 'total_energy_kwh' AND val_num IS NOT NULL
+        ORDER BY timestamp ASC
+    """
+    df_man = pd.read_sql_query(query, conn)
+    conn.close()
+    return df_man
+
 if st.button("🔄 Odśwież dane"):
     st.rerun()
 
 df = load_data(hours_back)
 
 if df.empty:
-    st.info(f"Brak danych z ostatnich {hours_back} godzin w bazie.")
+    st.info(f"Brak danych z okresu '{selected_range}' w bazie.")
 else:
     # SCALANIE WARTOŚCI NUMERYCZNYCH I TEKSTOWYCH
     df["val_combined"] = df["val_num"]
@@ -177,7 +193,6 @@ else:
         else:
             df_pivot[col] = df_pivot[col].ffill()
 
-    # Domyślnie zawór = 0 (CO) jeśli brak danych
     df_pivot["valve"] = df_pivot["valve"].fillna(0).astype(float)
 
     if resample_rule:
@@ -206,7 +221,6 @@ else:
     df_pivot["flow_m3h"] = df_pivot["flow_rate"] / 10.0
     df_pivot["delta_t"] = df_pivot["out_water_temp"] - df_pivot["in_water_temp"]
 
-    # Korekta Mocy Elektrycznej
     raw_p_el_kw = (df_pivot["ac_vol"] * curr_a * cos_phi) / 1000.0
     is_active = raw_p_el_kw > 0.1
     correction_kw = (standby_power_w / 1000.0) + np.where(is_active, active_power_w / 1000.0, 0.0)
@@ -214,7 +228,6 @@ else:
     df_pivot["P_el_kw"] = raw_p_el_kw + correction_kw
     df_pivot["P_th_kw"] = (df_pivot["flow_m3h"] * 4.186 * df_pivot["delta_t"]) / 3.6
     
-    # Zabezpieczenie COP
     df_pivot["COP"] = np.where(is_active, df_pivot["P_th_kw"] / df_pivot["P_el_kw"], np.nan)
 
     invalid_mask = (df_pivot["P_th_kw"] <= 0) | (df_pivot["COP"] < 0.5) | (df_pivot["COP"] > 10.0)
@@ -250,7 +263,7 @@ else:
     df_pivot["defrost_num"] = df_pivot["defrost"].fillna(0).apply(lambda x: 1 if x else 0)
     df_pivot["defrost_start"] = ((df_pivot["defrost_num"] == 1) & (df_pivot["defrost_num"].shift(1, fill_value=0) == 0)).astype(int)
 
-    # AGREGACJA DZIENNA
+    # AGREGACJA DZIENNA (WYKLICZENIA POMPY)
     df_pivot["dzień"] = df_pivot["czas"].dt.date
     df_pivot["E_el_co_row"] = np.where(df_pivot["Tryb"] == "CO", df_pivot["E_el_kwh"], 0.0)
     df_pivot["E_el_cwu_row"] = np.where(df_pivot["Tryb"] == "CWU", df_pivot["E_el_kwh"], 0.0)
@@ -276,7 +289,13 @@ else:
     avg_amb_temp = df_pivot["amb_temp"].mean()
     total_defrosts = int(daily_df["defrost_start"].sum())
 
-    tab_main, tab_scop, tab_diag = st.tabs(["📊 Panel Główny", "🏆 Bilans Energetyczny & SCOP", "🏥 Diagnostyka Pompy"])
+    # --- ZAKŁADKI PANELU ---
+    tab_main, tab_scop, tab_diag, tab_manual = st.tabs([
+        "📊 Panel Główny", 
+        "🏆 Bilans Energetyczny & SCOP", 
+        "🏥 Diagnostyka Pompy",
+        "📝 Odczyty Ręczne"
+    ])
 
     # ZAKŁADKA 1: PANEL GŁÓWNY
     with tab_main:
@@ -442,3 +461,83 @@ else:
         fig_disc.add_hline(y=90.0, line_dash="dash", line_color="Red", annotation_text="Krytyczne 90°C", annotation_position="bottom right")
         fig_disc.update_layout(hovermode="x unified", xaxis_title="Czas", yaxis_title="Wartość")
         st.plotly_chart(fig_disc, width="stretch")
+
+    # ZAKŁADKA 4: RĘCZNE ODCZYTY LICZNIKA
+    with tab_manual:
+        st.header("📝 Ręczne Odczyty Licznika Energii")
+        
+        df_manual = load_manual_readings()
+
+        if df_manual.empty:
+            st.info("Brak wprowadzonych ręcznych odczytów licznika w bazie danych.")
+        else:
+            df_m_table = df_manual.copy()
+            df_m_table["czas"] = pd.to_datetime(df_m_table["czas"])
+            
+            # Obliczenie różnicy stanów licznika oraz czasu między odczytami
+            df_m_table["Różnica [kWh]"] = df_m_table["stan_licznika"].diff().round(2)
+            
+            st.subheader("📋 Tabela zarejestrowanych odczytów")
+            
+            display_table = df_m_table.sort_values("czas", ascending=False).rename(columns={
+                "czas": "Data i czas",
+                "stan_licznika": "Stan licznika [kWh]",
+                "device_id": "ID Urządzenia"
+            })[["Data i czas", "Stan licznika [kWh]", "Różnica [kWh]", "ID Urządzenia"]]
+            
+            st.dataframe(display_table, width="stretch", hide_index=True)
+
+            st.markdown("---")
+            st.subheader("📈 Dzienne Zużycie: Licznik Ręczny (Estymowane) vs Pompa Ciepła")
+
+            if len(df_m_table) >= 2:
+                # Interpolacja liniowa dla brakujących dni w odczytach ręcznych
+                df_interp = df_m_table.set_index("czas")[["stan_licznika"]].resample("D").asfreq()
+                df_interp["stan_interpolowany"] = df_interp["stan_licznika"].interpolate(method="linear")
+                df_interp["dzienne_zuzycie_licznik"] = df_interp["stan_interpolowany"].diff().round(2)
+                
+                df_interp = df_interp.reset_index()
+                df_interp["dzień"] = df_interp["czas"].dt.date
+
+                # Połączenie z dziennym zużyciem wyliczonym przez pompę
+                merged_daily = pd.merge(
+                    df_interp[["dzień", "dzienne_zuzycie_licznik"]].dropna(),
+                    daily_df[["dzień", "E_el_total"]],
+                    on="dzień",
+                    how="outer"
+                ).sort_values("dzień")
+
+                merged_daily["E_el_total"] = merged_daily["E_el_total"].round(2)
+
+                fig_manual = go.Figure()
+
+                # Słupki estymowanego dziennego zużycia z licznika
+                fig_manual.add_trace(go.Bar(
+                    x=merged_daily["dzień"],
+                    y=merged_daily["dzienne_zuzycie_licznik"],
+                    name="Licznik Ręczny (Estymowane dzienne)",
+                    marker_color="#3498DB",
+                    opacity=0.75
+                ))
+
+                # Linia wyliczonego dziennego zużycia przez pompę
+                fig_manual.add_trace(go.Scatter(
+                    x=merged_daily["dzień"],
+                    y=merged_daily["E_el_total"],
+                    name="Wyliczone przez pompę (P_el)",
+                    mode="lines+markers",
+                    line=dict(color="#E74C3C", width=3),
+                    marker=dict(size=8)
+                ))
+
+                fig_manual.update_layout(
+                    title="Porównanie Dziennego Zużycia Energii [kWh]",
+                    xaxis_title="Data",
+                    yaxis_title="Energia [kWh]",
+                    hovermode="x unified",
+                    barmode="overlay"
+                )
+
+                st.plotly_chart(fig_manual, width="stretch")
+            else:
+                st.warning("Do wygenerowania wykresu dziennego zużycia i estymacji potrzebne są co najmniej 2 odczyty licznika.")
