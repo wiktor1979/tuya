@@ -4,7 +4,7 @@ from typing import Optional, List, Dict, Any
 
 DB_FILE = "/data/tuya_telemetry.db"
 
-# TUTAJ WPROWADŹ ID SWOJEJ POMPY CIEPŁA
+# Identyfikatory urządzeń
 HEAT_PUMP_DEV_ID = "bf874f7ae72aca1fc23op0"
 MANUAL_METER_DEV_ID = "licznikRęczny"
 
@@ -31,7 +31,6 @@ def init_db():
         )
     ''')
     
-    # Indeksy przyspieszające zapytania
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_code_time ON telemetry (code, timestamp)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_dev_time ON telemetry (device_id, timestamp)')
     
@@ -39,36 +38,36 @@ def init_db():
     conn.close()
 
 
-def save_manual_energy_reading(reading_val: float, timestamp_sec: int) -> bool:
+def save_manual_energy_reading(reading_val: float, timestamp_sec: int) -> tuple[bool, str]:
     """
     Zapisuje ręczny odczyt z fizycznego licznika energii.
-    Zabezpiecza przed zapisem duplikatów o tym samym czasie lub identycznej wartości pod rząd.
+    Zabezpiecza przed wysłaniem pustych danych, ujemnych oraz duplikatów.
     """
-    if reading_val is None or reading_val < 0:
-        return False
+    if reading_val is None or reading_val <= 0:
+        return False, "Wartość licznika musi być większa od zera."
 
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
 
-    # Sprawdzenie 1: Czy dla tego dokładnego timestampu nie ma już wpisu
+    # Zabezpieczenie 1: Dokładnie ten sam znacznik czasu
     cursor.execute('''
         SELECT id FROM telemetry
         WHERE device_id = ? AND timestamp = ? AND code = 'energy_kwh'
     ''', (MANUAL_METER_DEV_ID, timestamp_sec))
     if cursor.fetchone():
         conn.close()
-        return False
+        return False, "Wpis z wybraną datą i godziną już istnieje."
 
-    # Sprawdzenie 2: Czy ostatnio wpisana wartość nie jest identyczna (zabezpieczenie przed dublem)
+    # Zabezpieczenie 2: Identyczny stan licznika dla sąsiadującego wpisu
     cursor.execute('''
         SELECT val_num FROM telemetry
         WHERE device_id = ? AND code = 'energy_kwh'
-        ORDER BY timestamp DESC LIMIT 1
-    ''', (MANUAL_METER_DEV_ID,))
-    last_row = cursor.fetchone()
-    if last_row and last_row[0] is not None and abs(last_row[0] - reading_val) < 0.0001:
+        ORDER BY ABS(timestamp - ?) ASC LIMIT 1
+    ''', (MANUAL_METER_DEV_ID, timestamp_sec))
+    closest = cursor.fetchone()
+    if closest and closest[0] is not None and abs(closest[0] - reading_val) < 0.0001:
         conn.close()
-        return False
+        return False, "Taka wartość licznika została już wcześniej zarejestrowana."
 
     cursor.execute('''
         INSERT INTO telemetry (timestamp, device_id, code, val_num, val_str)
@@ -77,7 +76,44 @@ def save_manual_energy_reading(reading_val: float, timestamp_sec: int) -> bool:
 
     conn.commit()
     conn.close()
-    return True
+    return True, "Odczyt został pomyślnie zapisany."
+
+
+def update_manual_energy_reading(rec_id: int, new_val: float, timestamp_sec: int) -> tuple[bool, str]:
+    """Aktualizuje istniejący wpis ręczny wyłącznie dla device_id = MANUAL_METER_DEV_ID."""
+    if new_val is None or new_val <= 0:
+        return False, "Wartość licznika musi być większa od zera."
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE telemetry
+        SET timestamp = ?, val_num = ?
+        WHERE id = ? AND device_id = ? AND code = 'energy_kwh'
+    ''', (timestamp_sec, float(new_val), rec_id, MANUAL_METER_DEV_ID))
+    
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    
+    if updated:
+        return True, "Wpis został zaktualizowany."
+    return False, "Nie znaleziono wskazanego wpisu do edycji."
+
+
+def delete_manual_energy_reading(rec_id: int) -> bool:
+    """Usuwa wpis ręczny z bazy danych."""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute('''
+        DELETE FROM telemetry 
+        WHERE id = ? AND device_id = ? AND code = 'energy_kwh'
+    ''', (rec_id, MANUAL_METER_DEV_ID))
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
 
 
 def save_properties_to_db(dev_id: str, properties: list, event_time: int = None) -> bool:
@@ -104,13 +140,9 @@ def save_properties_to_db(dev_id: str, properties: list, event_time: int = None)
             ORDER BY timestamp DESC LIMIT 1
         ''', (dev_id,))
         row = cursor.fetchone()
-        if row and row[0] is not None:
-            comp_freq_val = row[0]
-        else:
-            comp_freq_val = 0
+        comp_freq_val = row[0] if (row and row[0] is not None) else 0
 
     is_running = (comp_freq_val is not None and comp_freq_val > 0)
-
     records_to_insert = []
 
     for item in properties:
