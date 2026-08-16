@@ -2,11 +2,8 @@ import sqlite3
 import time
 
 DB_FILE = "/data/tuya_telemetry.db"
-
-# TUTAJ WPROWADŹ ID SWOJEJ POMPY CIEPŁA
 HEAT_PUMP_DEV_ID = "bf874f7ae72aca1fc23op0"
 
-# Kody parametrów będących temperaturami (wymagają podziału przez 10)
 TEMP_CODES = {
     "in_water_temp", "out_water_temp", "tank_temp", 
     "amb_temp", "disc_temp", "back_temp", "tidr",
@@ -14,7 +11,6 @@ TEMP_CODES = {
 }
 
 def init_db():
-    """Tworzy tabelę telemetry oraz indeksy wyszukiwania."""
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
@@ -29,7 +25,6 @@ def init_db():
         )
     ''')
     
-    # Indeksy drastycznie przyspieszają zapytania do wykresów
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_code_time ON telemetry (code, timestamp)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_dev_time ON telemetry (device_id, timestamp)')
     
@@ -37,11 +32,27 @@ def init_db():
     conn.close()
 
 
+def save_manual_reading(device_id: str, code: str, val_num: float, timestamp: int = None) -> bool:
+    """Zapisuje ręczny odczyt z formularza bezpośrednio do tabeli telemetry."""
+    if timestamp is None:
+        timestamp = int(time.time())
+
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO telemetry (timestamp, device_id, code, val_num, val_str)
+            VALUES (?, ?, ?, ?, NULL)
+        ''', (timestamp, device_id, code, float(val_num)))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Błąd zapisu odczytu ręcznego: {e}")
+        return False
+
+
 def save_properties_to_db(dev_id: str, properties: list, event_time: int = None) -> bool:
-    """Zapisuje dynamiczną listę parametrów z ramki Tuya do bazy SQLite. 
-       Zwraca True, jeśli zapisano dane, w przeciwnym razie False."""
-    
-    # --- FILTR 1: Jeśli to nie nasza pompa, przerywamy i zwracamy False ---
     if dev_id != HEAT_PUMP_DEV_ID:
         return False
 
@@ -51,14 +62,12 @@ def save_properties_to_db(dev_id: str, properties: list, event_time: int = None)
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
 
-    # Sprawdzamy w bieżącej paczce lub bazie, czy sprężarka faktycznie pracuje (comp_freq > 0)
     comp_freq_val = None
     for item in properties:
         if item.get("code") == "comp_freq":
             comp_freq_val = item.get("value")
             break
 
-    # Jeśli w tej konkretnej ramce nie ma comp_freq, sprawdzamy ostatni znany stan w bazie
     if comp_freq_val is None:
         cursor.execute('''
             SELECT val_num FROM telemetry 
@@ -66,13 +75,9 @@ def save_properties_to_db(dev_id: str, properties: list, event_time: int = None)
             ORDER BY timestamp DESC LIMIT 1
         ''', (dev_id,))
         row = cursor.fetchone()
-        if row and row[0] is not None:
-            comp_freq_val = row[0]
-        else:
-            comp_freq_val = 0
+        comp_freq_val = row[0] if (row and row[0] is not None) else 0
 
     is_running = (comp_freq_val is not None and comp_freq_val > 0)
-
     records_to_insert = []
 
     for item in properties:
@@ -82,14 +87,12 @@ def save_properties_to_db(dev_id: str, properties: list, event_time: int = None)
         if code is None or raw_val is None:
             continue
 
-        # --- FILTR 2: Jeśli pompa nie pracuje, ignorujemy ciągłe skoki napięcia sieciowego ---
         if code == "ac_vol" and not is_running:
             continue
 
         val_num = None
         val_str = None
 
-        # Konwersja i kategoryzacja wartości (liczba vs tekst/boolean)
         if code in TEMP_CODES and isinstance(raw_val, (int, float)):
             val_num = round(raw_val / 10.0, 1)
         elif isinstance(raw_val, (int, float)) and not isinstance(raw_val, bool):
@@ -106,7 +109,7 @@ def save_properties_to_db(dev_id: str, properties: list, event_time: int = None)
         ''', records_to_insert)
         conn.commit()
         conn.close()
-        return True  # Sukces - dane zostały zapisane
+        return True
 
     conn.close()
     return False
