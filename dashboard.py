@@ -17,7 +17,7 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    /* 1. Wygląd kafelków metryk */
+    /* 1. Ciemne kafelki metryk */
     [data-testid="stMetric"] {
         background-color: #1E1E1E;
         border: 1px solid #333;
@@ -26,7 +26,24 @@ st.markdown(
         box-shadow: 2px 2px 10px rgba(0,0,0,0.3);
     }
 
-    /* 2. Siatka kafelków na telefonach */
+    /* 2. FIX: czytelny tekst na ciemnym tle (działa też w jasnym motywie) */
+    [data-testid="stMetric"] [data-testid="stMetricLabel"] {
+        color: #C7C7C7 !important;
+    }
+
+    [data-testid="stMetric"] [data-testid="stMetricValue"] {
+        color: #FFFFFF !important;
+    }
+
+    [data-testid="stMetric"] [data-testid="stMetricDelta"] {
+        color: #8EC9FF !important;
+    }
+
+    [data-testid="stMetric"] [data-testid="stMetricDelta"] svg {
+        fill: #8EC9FF !important;
+    }
+
+    /* 3. Siatka kafelków na telefonach */
     @media (max-width: 768px) {
         [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) {
             display: grid !important;
@@ -34,7 +51,7 @@ st.markdown(
             gap: 10px !important;
         }
 
-        [data-testid="stMetricValue"] {
+        [data-testid="stMetric"] [data-testid="stMetricValue"] {
             font-size: 1.5rem !important;
         }
     }
