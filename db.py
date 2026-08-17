@@ -4,23 +4,32 @@ from typing import Optional, List, Dict, Any
 
 DB_FILE = "/data/tuya_telemetry.db"
 
-# Identyfikatory urządzeń
+# TUTAJ WPROWADŹ ID SWOJEJ POMPY CIEPŁA
 HEAT_PUMP_DEV_ID = "bf874f7ae72aca1fc23op0"
 MANUAL_METER_DEV_ID = "licznikRęczny"
 
 # Kody parametrów będących temperaturami (wymagają podziału przez 10)
 TEMP_CODES = {
-    "in_water_temp", "out_water_temp", "tank_temp", 
-    "amb_temp", "disc_temp", "back_temp", "tidr",
-    "cool_temp_set", "heat_temp_set", "hot_water_temp_set"
+    "in_water_temp",
+    "out_water_temp",
+    "tank_temp",
+    "amb_temp",
+    "disc_temp",
+    "back_temp",
+    "tidr",
+    "cool_temp_set",
+    "heat_temp_set",
+    "hot_water_temp_set",
 }
+
 
 def init_db():
     """Tworzy tabelę telemetry oraz indeksy wyszukiwania."""
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    
-    cursor.execute('''
+
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS telemetry (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp INTEGER NOT NULL,
@@ -29,95 +38,83 @@ def init_db():
             val_num REAL,
             val_str TEXT
         )
-    ''')
-    
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_code_time ON telemetry (code, timestamp)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_dev_time ON telemetry (device_id, timestamp)')
-    
+        """
+    )
+
+    # Indeksy przyspieszające zapytania
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_code_time ON telemetry (code, timestamp)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_dev_time ON telemetry (device_id, timestamp)"
+    )
+
     conn.commit()
     conn.close()
 
 
-def save_manual_energy_reading(reading_val: float, timestamp_sec: int) -> tuple[bool, str]:
+def save_manual_energy_reading(reading_val: float, timestamp_sec: int) -> bool:
     """
     Zapisuje ręczny odczyt z fizycznego licznika energii.
-    Zabezpiecza przed wysłaniem pustych danych, ujemnych oraz duplikatów.
+    Zabezpiecza przed zapisem duplikatów o tym samym czasie lub identycznej wartości pod rząd.
     """
-    if reading_val is None or reading_val <= 0:
-        return False, "Wartość licznika musi być większa od zera."
+    if reading_val is None or reading_val < 0:
+        return False
 
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
 
-    # Zabezpieczenie 1: Dokładnie ten sam znacznik czasu
-    cursor.execute('''
-        SELECT id FROM telemetry
-        WHERE device_id = ? AND timestamp = ? AND code = 'energy_kwh'
-    ''', (MANUAL_METER_DEV_ID, timestamp_sec))
+    # Sprawdzenie 1: czy dla tego dokładnego timestampu nie ma już wpisu
+    cursor.execute(
+        """
+        SELECT id
+        FROM telemetry
+        WHERE device_id = ?
+          AND timestamp = ?
+          AND trim(code) = 'energy_kwh'
+        """,
+        (MANUAL_METER_DEV_ID, timestamp_sec),
+    )
+
     if cursor.fetchone():
         conn.close()
-        return False, "Wpis z wybraną datą i godziną już istnieje."
+        return False
 
-    # Zabezpieczenie 2: Identyczny stan licznika dla sąsiadującego wpisu
-    cursor.execute('''
-        SELECT val_num FROM telemetry
-        WHERE device_id = ? AND code = 'energy_kwh'
-        ORDER BY ABS(timestamp - ?) ASC LIMIT 1
-    ''', (MANUAL_METER_DEV_ID, timestamp_sec))
-    closest = cursor.fetchone()
-    if closest and closest[0] is not None and abs(closest[0] - reading_val) < 0.0001:
+    # Sprawdzenie 2: czy ostatnio wpisana wartość nie jest identyczna
+    cursor.execute(
+        """
+        SELECT val_num
+        FROM telemetry
+        WHERE device_id = ?
+          AND trim(code) = 'energy_kwh'
+        ORDER BY timestamp DESC
+        LIMIT 1
+        """,
+        (MANUAL_METER_DEV_ID,),
+    )
+
+    last_row = cursor.fetchone()
+    if last_row and last_row[0] is not None and abs(last_row[0] - reading_val) < 0.0001:
         conn.close()
-        return False, "Taka wartość licznika została już wcześniej zarejestrowana."
+        return False
 
-    cursor.execute('''
+    cursor.execute(
+        """
         INSERT INTO telemetry (timestamp, device_id, code, val_num, val_str)
         VALUES (?, ?, 'energy_kwh', ?, NULL)
-    ''', (timestamp_sec, MANUAL_METER_DEV_ID, float(reading_val)))
+        """,
+        (timestamp_sec, MANUAL_METER_DEV_ID, float(reading_val)),
+    )
 
     conn.commit()
     conn.close()
-    return True, "Odczyt został pomyślnie zapisany."
-
-
-def update_manual_energy_reading(rec_id: int, new_val: float, timestamp_sec: int) -> tuple[bool, str]:
-    """Aktualizuje istniejący wpis ręczny wyłącznie dla device_id = MANUAL_METER_DEV_ID."""
-    if new_val is None or new_val <= 0:
-        return False, "Wartość licznika musi być większa od zera."
-
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-
-    cursor.execute('''
-        UPDATE telemetry
-        SET timestamp = ?, val_num = ?
-        WHERE id = ? AND device_id = ? AND code = 'energy_kwh'
-    ''', (timestamp_sec, float(new_val), rec_id, MANUAL_METER_DEV_ID))
-    
-    updated = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
-    
-    if updated:
-        return True, "Wpis został zaktualizowany."
-    return False, "Nie znaleziono wskazanego wpisu do edycji."
-
-
-def delete_manual_energy_reading(rec_id: int) -> bool:
-    """Usuwa wpis ręczny z bazy danych."""
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute('''
-        DELETE FROM telemetry 
-        WHERE id = ? AND device_id = ? AND code = 'energy_kwh'
-    ''', (rec_id, MANUAL_METER_DEV_ID))
-    deleted = cursor.rowcount > 0
-    conn.commit()
-    conn.close()
-    return deleted
+    return True
 
 
 def save_properties_to_db(dev_id: str, properties: list, event_time: int = None) -> bool:
     """Zapisuje dynamiczną listę parametrów z ramki Tuya do bazy SQLite."""
+    dev_id = str(dev_id).strip()
+
     if dev_id != HEAT_PUMP_DEV_ID:
         return False
 
@@ -127,51 +124,89 @@ def save_properties_to_db(dev_id: str, properties: list, event_time: int = None)
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
 
+    # Sprawdź aktualny stan sprężarki, aby decydować o zapisie ac_vol
     comp_freq_val = None
+
     for item in properties:
-        if item.get("code") == "comp_freq":
+        if not isinstance(item, dict):
+            continue
+
+        code = str(item.get("code", "")).strip()
+        if code == "comp_freq":
             comp_freq_val = item.get("value")
             break
 
     if comp_freq_val is None:
-        cursor.execute('''
-            SELECT val_num FROM telemetry 
-            WHERE device_id = ? AND code = 'comp_freq' 
-            ORDER BY timestamp DESC LIMIT 1
-        ''', (dev_id,))
+        cursor.execute(
+            """
+            SELECT val_num
+            FROM telemetry
+            WHERE device_id = ?
+              AND trim(code) = 'comp_freq'
+            ORDER BY timestamp DESC
+            LIMIT 1
+            """,
+            (dev_id,),
+        )
         row = cursor.fetchone()
-        comp_freq_val = row[0] if (row and row[0] is not None) else 0
 
-    is_running = (comp_freq_val is not None and comp_freq_val > 0)
+        if row and row[0] is not None:
+            comp_freq_val = row[0]
+        else:
+            comp_freq_val = 0
+
+    try:
+        comp_freq_float = float(comp_freq_val)
+    except Exception:
+        comp_freq_float = 0.0
+
+    is_running = comp_freq_float > 0.0
+
     records_to_insert = []
 
     for item in properties:
-        code = item.get("code")
-        raw_val = item.get("value")
-
-        if code is None or raw_val is None:
+        if not isinstance(item, dict):
             continue
 
+        code = str(item.get("code", "")).strip()
+        raw_val = item.get("value")
+
+        if not code or raw_val is None:
+            continue
+
+        # Nie zapisuj napięcia, gdy sprężarka nie pracuje
+        # Zmniejsza to liczbę rekordów, a standby można później modelować mocą stałą
         if code == "ac_vol" and not is_running:
             continue
 
         val_num = None
         val_str = None
 
-        if code in TEMP_CODES and isinstance(raw_val, (int, float)):
+        if code in TEMP_CODES and isinstance(raw_val, (int, float)) and not isinstance(raw_val, bool):
             val_num = round(raw_val / 10.0, 1)
         elif isinstance(raw_val, (int, float)) and not isinstance(raw_val, bool):
             val_num = float(raw_val)
         else:
             val_str = str(raw_val)
 
-        records_to_insert.append((event_time, dev_id, code, val_num, val_str))
+        records_to_insert.append(
+            (
+                event_time,
+                dev_id,
+                code,
+                val_num,
+                val_str,
+            )
+        )
 
     if records_to_insert:
-        cursor.executemany('''
+        cursor.executemany(
+            """
             INSERT INTO telemetry (timestamp, device_id, code, val_num, val_str)
             VALUES (?, ?, ?, ?, ?)
-        ''', records_to_insert)
+            """,
+            records_to_insert,
+        )
         conn.commit()
         conn.close()
         return True
