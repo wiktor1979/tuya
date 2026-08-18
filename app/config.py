@@ -1,19 +1,46 @@
 """Konfiguracja aplikacji - zmienne środowiskowe i stałe."""
 import os
 from dotenv import load_dotenv
+from typing import List, Dict, Optional
 
 load_dotenv()
 
-# Konfiguracja Tuya Pulsar (EU)
-TUYA_ACCESS_ID = os.environ.get("TUYA_ACCESS_ID")
-TUYA_ACCESS_KEY = os.environ.get("TUYA_ACCESS_KEY")
+# Konfiguracja Tuya Pulsar (EU) - obsługa wielu kont
+# Format: lista słowników z kluczami: access_id, access_key, devices (lista ID urządzeń)
+TUYA_ACCOUNTS: List[Dict[str, any]] = []
+
+# Pobierz konfigurację z environment variables (dla wstecznej kompatybilności)
+single_access_id = os.environ.get("TUYA_ACCESS_ID")
+single_access_key = os.environ.get("TUYA_ACCESS_KEY")
+single_device_ids = os.environ.get("TUYA_DEVICE_IDS", "")
+
+if single_access_id and single_access_key:
+    # Pojedyncze konto - skonwertuj do formatu listy
+    device_list = [d.strip() for d in single_device_ids.split(",") if d.strip()]
+    TUYA_ACCOUNTS.append({
+        "access_id": single_access_id,
+        "access_key": single_access_key,
+        "devices": device_list
+    })
+
+# Sprawdź czy istnieje konfiguracja dla wielu kont (TUYA_ACCOUNTS_JSON)
+accounts_json = os.environ.get("TUYA_ACCOUNTS_JSON")
+if accounts_json:
+    import json
+    try:
+        parsed_accounts = json.loads(accounts_json)
+        if isinstance(parsed_accounts, list):
+            TUYA_ACCOUNTS = parsed_accounts
+    except json.JSONDecodeError:
+        pass
+
 MQ_ENV_PROD = "event"
 PULSAR_SERVER_EU = "pulsar+ssl://mqe.tuyaeu.com:7285/"
 
 # Baza danych
 DB_FILE = "/data/tuya_telemetry.db"
 
-# Identyfikatory urządzeń
+# Domyślne ID urządzenia (dla wstecznej kompatybilności)
 HEAT_PUMP_DEV_ID = "bf874f7ae72aca1fc23op0"
 MANUAL_METER_DEV_ID = "licznikRęczny"
 

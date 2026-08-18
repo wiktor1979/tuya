@@ -3,14 +3,19 @@ import json
 import base64
 import hashlib
 import time
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from Crypto.Cipher import AES
 import pulsar
 
 from app.config import (
-    TUYA_ACCESS_ID, TUYA_ACCESS_KEY, PULSAR_SERVER_EU, 
+    TUYA_ACCOUNTS, PULSAR_SERVER_EU, 
     MQ_ENV_PROD, TEMP_CODES, THRESHOLDS, MAX_HEARTBEAT_SEC
 )
+
+
+def get_tuya_accounts() -> List[Dict[str, any]]:
+    """Zwraca listę skonfigurowanych kont Tuya."""
+    return TUYA_ACCOUNTS
 
 
 class DeadbandFilter:
@@ -112,28 +117,41 @@ def message_id(msg_id: pulsar.MessageId) -> str:
 
 
 class TuyaPulsarClient:
-    """Klient do obsługi połączenia z Tuya Pulsar."""
+    """Klient do obsługi połączenia z Tuya Pulsar - obsługa wielu kont."""
     
-    def __init__(self):
-        if not TUYA_ACCESS_ID or not TUYA_ACCESS_KEY:
-            raise ValueError("Brak kluczy TUYA_ACCESS_ID / TUYA_ACCESS_KEY w pliku .env!")
+    def __init__(self, account_config: Optional[Dict[str, any]] = None):
+        """
+        Inicjalizacja klienta dla konkretnego konta Tuya.
+        
+        Args:
+            account_config: Słownik z kluczami: access_id, access_key, devices (opcjonalnie lista ID)
+        """
+        if account_config is None:
+            raise ValueError("Brak konfiguracji konta Tuya!")
+        
+        self.access_id = account_config.get("access_id")
+        self.access_key = account_config.get("access_key")
+        self.monitored_devices = account_config.get("devices", [])
+        
+        if not self.access_id or not self.access_key:
+            raise ValueError("Brak kluczy access_id / access_key w konfiguracji konta!")
         
         self.filter = DeadbandFilter()
         self.client: Optional[pulsar.Client] = None
         self.consumer: Optional[pulsar.Consumer] = None
     
     def connect(self) -> None:
-        """Łączy się z serwerem Tuya Pulsar."""
-        print("Łączenie z serwerem Tuya Pulsar (EU)...", flush=True)
+        """Łączy się z serwerem Tuya Pulsar dla tego konta."""
+        print(f"Łączenie z serwerem Tuya Pulsar (EU) dla konta: {self.access_id}...", flush=True)
 
         self.client = pulsar.Client(
             PULSAR_SERVER_EU,
-            authentication=get_authentication(TUYA_ACCESS_ID, TUYA_ACCESS_KEY),
+            authentication=get_authentication(self.access_id, self.access_key),
             tls_allow_insecure_connection=True,
         )
 
-        topic = f"{TUYA_ACCESS_ID}/out/{MQ_ENV_PROD}"
-        subscription_name = f"{TUYA_ACCESS_ID}-sub"
+        topic = f"{self.access_id}/out/{MQ_ENV_PROD}"
+        subscription_name = f"{self.access_id}-sub"
 
         self.consumer = self.client.subscribe(
             topic,
@@ -141,7 +159,8 @@ class TuyaPulsarClient:
             consumer_type=pulsar.ConsumerType.Failover
         )
 
-        print(f"Połączono pomyślnie! Subskrypcja tematu: {topic}", flush=True)
+        devices_info = f" (monitorowane urządzenia: {', '.join(self.monitored_devices)})" if self.monitored_devices else " (wszystkie urządzenia)"
+        print(f"Połączono pomyślnie! Subskrypcja tematu: {topic}{devices_info}", flush=True)
         print("Oczekiwanie na zdarzenia z pompy ciepła (z włączonym filtrem Deadband)...\n", flush=True)
     
     def handle_parsed_payload(self, decrypted_json_str: str, save_callback) -> None:
@@ -159,6 +178,10 @@ class TuyaPulsarClient:
             
             raw_ts = data.get("ts") or biz_data.get("ts")
             event_time = int(raw_ts / 1000) if raw_ts else int(time.time())
+
+            # Filtruj urządzenia jeśli lista monitorowanych jest określona
+            if self.monitored_devices and dev_id not in self.monitored_devices:
+                return  # Ignoruj urządzenia spoza listy monitorowanych
 
             if dev_id and status_list:
                 filtered_status_list = []
@@ -180,7 +203,7 @@ class TuyaPulsarClient:
                     
                     if is_saved:
                         saved_codes = [f"{i['code']}={i['value']}" for i in filtered_status_list]
-                        print(f"[{time.strftime('%H:%M:%S')}] Zapisano ({len(filtered_status_list)}/{len(status_list)}): {', '.join(saved_codes)}", flush=True)
+                        print(f"[{time.strftime('%H:%M:%S')}] {dev_id}: Zapisano ({len(filtered_status_list)}/{len(status_list)}): {', '.join(saved_codes)}", flush=True)
 
         except Exception as e:
             print(f"Błąd przetwarzania/zapisu ramki: {e}", flush=True)
@@ -193,7 +216,7 @@ class TuyaPulsarClient:
         while True:
             try:
                 pulsar_message = self.consumer.receive()
-                decrypted_msg = decrypt_message(pulsar_message, TUYA_ACCESS_KEY)
+                decrypted_msg = decrypt_message(pulsar_message, self.access_key)
                 
                 self.handle_parsed_payload(decrypted_msg, save_callback)
                 
@@ -208,3 +231,41 @@ class TuyaPulsarClient:
         """Zamyka połączenie z Pulsar."""
         if self.client:
             self.client.close()
+
+
+class MultiAccountTuyaClient:
+    """Zarządza wieloma klientami TuyaPulsarClient dla różnych kont."""
+    
+    def __init__(self):
+        self.clients: List[TuyaPulsarClient] = []
+        self.threads: List = []
+    
+    def add_account(self, account_config: Dict[str, any]) -> None:
+        """Dodaje nowe konto Tuya do monitorowania."""
+        client = TuyaPulsarClient(account_config)
+        self.clients.append(client)
+        print(f"Dodano konto Tuya: {account_config.get('access_id')}", flush=True)
+    
+    def start_listening(self, save_callback) -> None:
+        """Uruchamia nasłuchiwanie na wszystkich kontach w osobnych wątkach."""
+        import threading
+        
+        if not self.clients:
+            raise RuntimeError("Brak skonfigurowanych kont Tuya!")
+        
+        print(f"Uruchamianie nasłuchiwania na {len(self.clients)} kontach Tuya...", flush=True)
+        
+        for client in self.clients:
+            client.connect()
+            thread = threading.Thread(target=client.listen, args=(save_callback,), daemon=True)
+            thread.start()
+            self.threads.append(thread)
+        
+        # Główny wątek czeka na wszystkie wątki klienckie
+        for thread in self.threads:
+            thread.join()
+    
+    def close_all(self) -> None:
+        """Zamyka wszystkie połączenia z Pulsar."""
+        for client in self.clients:
+            client.close()
