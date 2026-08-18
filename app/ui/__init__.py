@@ -1,0 +1,1 @@
+"""Komponenty UI dla dashboardu."""
