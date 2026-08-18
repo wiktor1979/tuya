@@ -107,8 +107,8 @@ def delete_manual_energy_reading(rec_id: int) -> bool:
 
 def save_properties_to_db(dev_id: str, properties: list, event_time: Optional[int] = None) -> bool:
     """Zapisuje dynamiczną listę parametrów z ramki Tuya do bazy SQLite."""
-    if dev_id != HEAT_PUMP_DEV_ID:
-        return False
+    # Akceptuj wszystkie urządzenia - nie filtruj po sztywnym ID
+    # Dzięki temu można obsługiwać wiele pomp z różnych kont Tuya
 
     if not event_time:
         import time

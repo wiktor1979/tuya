@@ -56,7 +56,52 @@ pip install -r requirements.txt
 python main.py
 ```
 
-### Dashboard
+### Obsługa wielu pomp ciepła na różnych kontach Tuya
+
+Aplikacja obsługuje monitorowanie wielu pomp ciepła z różnych kont Tuya.
+
+### Konfiguracja dla pojedynczego konta
+
+W pliku `.env` ustaw:
+
+```bash
+TUYA_ACCESS_ID=twoje_access_id
+TUYA_ACCESS_KEY=twoje_access_key
+TUYA_DEVICE_IDS=bf874f7ae72aca1fc23op0,drugie_urzadzenie_id
+```
+
+### Konfiguracja dla wielu kont
+
+Użyj zmiennej `TUYA_ACCOUNTS_JSON` zamiast powyższych:
+
+```bash
+TUYA_ACCOUNTS_JSON=[
+  {
+    "access_id": "konto1_access_id",
+    "access_key": "konto1_access_key",
+    "devices": ["device_id_1", "device_id_2"]
+  },
+  {
+    "access_id": "konto2_access_id", 
+    "access_key": "konto2_access_key",
+    "devices": ["device_id_3"]
+  }
+]
+```
+
+Gdzie:
+- `access_id` i `access_key` to dane z Twojego konta Tuya IoT Platform
+- `devices` to opcjonalna lista ID urządzeń do monitorowania (jeśli pominięta, monitorowane są wszystkie urządzenia na koncie)
+
+### Uruchomienie
+
+```bash
+python main.py
+```
+
+Aplikacja automatycznie wykryje liczbę skonfigurowanych kont i uruchomi odpowiedni tryb pracy.
+
+## Dashboard
 ```bash
 streamlit run dashboard.py --server.port 8501
 ```

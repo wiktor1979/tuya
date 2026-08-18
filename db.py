@@ -6,7 +6,7 @@ from app.services.database import (
     delete_manual_energy_reading,
     save_properties_to_db
 )
-from app.config import DB_FILE, HEAT_PUMP_DEV_ID, MANUAL_METER_DEV_ID, TEMP_CODES
+from app.config import DB_FILE, HEAT_PUMP_DEV_ID, MANUAL_METER_DEV_ID, TEMP_CODES, TUYA_ACCOUNTS
 
 __all__ = [
     'init_db',
@@ -17,5 +17,6 @@ __all__ = [
     'DB_FILE',
     'HEAT_PUMP_DEV_ID',
     'MANUAL_METER_DEV_ID',
-    'TEMP_CODES'
+    'TEMP_CODES',
+    'TUYA_ACCOUNTS'
 ]
