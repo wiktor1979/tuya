@@ -111,18 +111,28 @@ st.sidebar.header("🛠️ Kalibracja strat mocy")
 standby_power_w = st.sidebar.number_input("Pobór w spoczynku (elektronika) [W]", min_value=0, max_value=100, value=20, step=5)
 active_power_w = st.sidebar.number_input("Pobór pracy (wentylator, pompa obieg.) [W]", min_value=0, max_value=300, value=140, step=10)
 
-def load_pump_data(hours: int) -> pd.DataFrame:
+def load_pump_data(hours: int, all_time: bool = False) -> pd.DataFrame:
     """Ładuje dane wyłącznie ze sterownika pompy ciepła."""
     conn = sqlite3.connect(DB_FILE)
-    query = f"""
-        SELECT 
-            datetime(timestamp, 'unixepoch', 'localtime') as czas,
-            code, val_num, val_str
-        FROM telemetry
-        WHERE device_id = '{HEAT_PUMP_DEV_ID}'
-          AND timestamp >= strftime('%s', 'now', '-{hours} hours')
-        ORDER BY timestamp ASC
-    """
+    if all_time:
+        query = f"""
+            SELECT 
+                datetime(timestamp, 'unixepoch', 'localtime') as czas,
+                code, val_num, val_str
+            FROM telemetry
+            WHERE device_id = '{HEAT_PUMP_DEV_ID}'
+            ORDER BY timestamp ASC
+        """
+    else:
+        query = f"""
+            SELECT 
+                datetime(timestamp, 'unixepoch', 'localtime') as czas,
+                code, val_num, val_str
+            FROM telemetry
+            WHERE device_id = '{HEAT_PUMP_DEV_ID}'
+              AND timestamp >= strftime('%s', 'now', '-{hours} hours')
+            ORDER BY timestamp ASC
+        """
     df_data = pd.read_sql_query(query, conn)
     conn.close()
     return df_data
@@ -148,6 +158,7 @@ if st.button("🔄 Odśwież dane"):
     st.rerun()
 
 df = load_pump_data(hours_back)
+df_all_time = load_pump_data(hours_back, all_time=True)
 
 # --- PRZETWARZANIE TELEMETRII POMPY ---
 if not df.empty:
@@ -261,9 +272,67 @@ if not df.empty:
     avg_daily_el_cwu = daily_df["E_el_cwu_row"].sum() / num_days
     avg_amb_temp = df_pivot["amb_temp"].mean()
     total_defrosts = int(daily_df["defrost_start"].sum())
+    
+    # Agregacja dzienna dla wszystkich danych (do tabeli niezależnej od zakresu)
+    df_all_time_processed = df_all_time.copy()
+    if not df_all_time_processed.empty:
+        df_all_time_processed["val_combined"] = df_all_time_processed["val_num"]
+        mask_na = df_all_time_processed["val_combined"].isna() & df_all_time_processed["val_str"].notna()
+        df_all_time_processed.loc[mask_na, "val_combined"] = df_all_time_processed.loc[mask_na, "val_str"].map(bool_map)
+        
+        df_all_pivot = df_all_time_processed.pivot_table(index="czas", columns="code", values="val_combined", aggfunc="first").reset_index()
+        df_all_pivot["czas"] = pd.to_datetime(df_all_pivot["czas"])
+        df_all_pivot = df_all_pivot.sort_values("czas")
+        
+        for col in needed_cols:
+            if col not in df_all_pivot.columns:
+                df_all_pivot[col] = np.nan
+            else:
+                df_all_pivot[col] = df_all_pivot[col].ffill()
+        
+        df_all_pivot["valve"] = df_all_pivot["valve"].fillna(0).astype(float)
+        df_all_pivot["Tryb"] = np.where(df_all_pivot["valve"] >= 0.5, "CWU", "CO")
+        
+        curr_a_all = df_all_pivot["ac_curr"] / ac_curr_div
+        df_all_pivot["flow_m3h"] = df_all_pivot["flow_rate"] / 10.0
+        df_all_pivot["delta_t"] = df_all_pivot["out_water_temp"] - df_all_pivot["in_water_temp"]
+        
+        raw_p_el_kw_all = (df_all_pivot["ac_vol"] * curr_a_all * cos_phi) / 1000.0
+        is_active_all = raw_p_el_kw_all > 0.1
+        correction_kw_all = (standby_power_w / 1000.0) + np.where(is_active_all, active_power_w / 1000.0, 0.0)
+        
+        df_all_pivot["P_el_kw"] = raw_p_el_kw_all + correction_kw_all
+        df_all_pivot["P_th_kw"] = (df_all_pivot["flow_m3h"] * 4.186 * df_all_pivot["delta_t"]) / 3.6
+        
+        df_all_pivot["dt_hours"] = df_all_pivot["czas"].diff().dt.total_seconds().fillna(0) / 3600.0
+        df_all_pivot["E_el_kwh"] = df_all_pivot["P_el_kw"].shift(1).fillna(0) * df_all_pivot["dt_hours"]
+        
+        df_all_pivot["dzień"] = df_all_pivot["czas"].dt.date
+        df_all_pivot["E_el_co_row"] = np.where(df_all_pivot["Tryb"] == "CO", df_all_pivot["E_el_kwh"], 0.0)
+        df_all_pivot["E_el_cwu_row"] = np.where(df_all_pivot["Tryb"] == "CWU", df_all_pivot["E_el_kwh"], 0.0)
+        df_all_pivot["E_th_co_row"] = np.where(df_all_pivot["Tryb"] == "CO", df_all_pivot["P_th_kw"] * df_all_pivot["dt_hours"], 0.0)
+        df_all_pivot["E_th_cwu_row"] = np.where(df_all_pivot["Tryb"] == "CWU", df_all_pivot["P_th_kw"] * df_all_pivot["dt_hours"], 0.0)
+        df_all_pivot["defrost_num"] = df_all_pivot["defrost"].fillna(0).apply(lambda x: 1 if x else 0)
+        df_all_pivot["defrost_start"] = ((df_all_pivot["defrost_num"] == 1) & (df_all_pivot["defrost_num"].shift(1, fill_value=0) == 0)).astype(int)
+        
+        daily_df_all = df_all_pivot.groupby("dzień").agg({
+            "E_el_co_row": "sum",
+            "E_el_cwu_row": "sum",
+            "E_th_co_row": "sum",
+            "E_th_cwu_row": "sum",
+            "amb_temp": "mean",
+            "defrost_start": "sum"
+        }).reset_index()
+        
+        daily_df_all["E_el_total"] = daily_df_all["E_el_co_row"] + daily_df_all["E_el_cwu_row"]
+        daily_df_all["E_th_total"] = daily_df_all["E_th_co_row"] + daily_df_all["E_th_cwu_row"]
+        daily_df_all["SCOP_dzienny"] = np.where(daily_df_all["E_el_total"] > 0, daily_df_all["E_th_total"] / daily_df_all["E_el_total"], np.nan)
+    else:
+        daily_df_all = pd.DataFrame(columns=["dzień", "E_el_co_row", "E_el_cwu_row", "E_el_total", "amb_temp", "defrost_start"])
 else:
     df_pivot = pd.DataFrame()
     daily_df = pd.DataFrame(columns=["dzień", "E_el_total"])
+    daily_df_all = pd.DataFrame(columns=["dzień", "E_el_co_row", "E_el_cwu_row", "E_el_total", "amb_temp", "defrost_start"])
     e_el_co = e_el_cwu = e_th_co = e_th_cwu = e_th_total = e_el_total = scop_total = scop_co = scop_cwu = 0.0
     avg_daily_el_co = avg_daily_el_cwu = total_defrosts = 0
     avg_amb_temp = np.nan
@@ -380,15 +449,16 @@ with tab_scop:
         st.plotly_chart(fig_bar, width="stretch")
 
         st.markdown("---")
-        st.subheader("📅 Dzienny Bilans Zużycia, Temperatur i Defrostów")
-        daily_display = daily_df[["dzień", "amb_temp", "E_el_co_row", "E_el_cwu_row", "E_el_total", "defrost_start", "SCOP_dzienny"]].copy()
-        daily_display.columns = ["Data", "Śr. Temp Zewn. [°C]", "Prąd CO [kWh]", "Prąd CWU [kWh]", "Prąd Łącznie [kWh]", "Liczba Defrostów", "SCOP Dzienny"]
-        daily_display["Śr. Temp Zewn. [°C]"] = daily_display["Śr. Temp Zewn. [°C]"].round(1)
-        daily_display["Prąd CO [kWh]"] = daily_display["Prąd CO [kWh]"].round(2)
-        daily_display["Prąd CWU [kWh]"] = daily_display["Prąd CWU [kWh]"].round(2)
-        daily_display["Prąd Łącznie [kWh]"] = daily_display["Prąd Łącznie [kWh]"].round(2)
-        daily_display["SCOP Dzienny"] = daily_display["SCOP Dzienny"].round(2)
-        st.dataframe(daily_display, width="stretch", hide_index=True)
+        st.subheader("📅 Dzienny Bilans Zużycia, Temperatur i Defrostów (wszystkie dane)")
+        daily_display_all = daily_df_all[["dzień", "amb_temp", "E_el_co_row", "E_el_cwu_row", "E_el_total", "E_th_total", "SCOP_dzienny", "defrost_start"]].copy()
+        daily_display_all.columns = ["Data", "Śr. Temp Zewn. [°C]", "Prąd CO [kWh]", "Prąd CWU [kWh]", "Prąd Łącznie [kWh]", "Ciepło Łącznie [kWh]", "SCOP Dzienny", "Liczba Defrostów"]
+        daily_display_all["Śr. Temp Zewn. [°C]"] = daily_display_all["Śr. Temp Zewn. [°C]"].round(1)
+        daily_display_all["Prąd CO [kWh]"] = daily_display_all["Prąd CO [kWh]"].round(2)
+        daily_display_all["Prąd CWU [kWh]"] = daily_display_all["Prąd CWU [kWh]"].round(2)
+        daily_display_all["Prąd Łącznie [kWh]"] = daily_display_all["Prąd Łącznie [kWh]"].round(2)
+        daily_display_all["Ciepło Łącznie [kWh]"] = daily_display_all["Ciepło Łącznie [kWh]"].round(2)
+        daily_display_all["SCOP Dzienny"] = daily_display_all["SCOP Dzienny"].round(2)
+        st.dataframe(daily_display_all, width="stretch", hide_index=True)
 
 # --- ZAKŁADKA 3: DIAGNOSTYKA ---
 with tab_diag:
