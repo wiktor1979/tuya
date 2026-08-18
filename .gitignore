@@ -1,11 +1,9 @@
-```
-# Compiled and build artifacts
-*.pyc
+```gitignore
+# Python
 __pycache__/
-
-# Dependencies
-.venv/
-venv/
+*.pyc
+*.pyo
+*.pyd
 
 # Logs and temp files
 *.log
@@ -16,17 +14,4 @@ venv/
 .env
 .env.local
 *.env.*
-
-# Editors
-.vscode/
-.idea/
-
-# Coverage
-.coverage
-coverage/
-htmlcov/
-
-# Python cache
-.mypy_cache/
-.pytest_cache/
 ```
