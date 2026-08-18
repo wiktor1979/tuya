@@ -644,8 +644,8 @@ with tab_meter:
             meter_daily = df_interp_daily.dropna(subset=["Zuzycie_Licznik_kWh"])[["dzień", "Zuzycie_Licznik_kWh"]].reset_index(drop=True)
 
             # Połączenie ze statystykami dziennymi wyliczonymi przez pompę
-            if not daily_df.empty:
-                comp_df = pd.merge(meter_daily, daily_df[["dzień", "E_el_total"]], on="dzień", how="outer").sort_values("dzień")
+            if not daily_df_all.empty:
+                comp_df = pd.merge(meter_daily, daily_df_all[["dzień", "E_el_total"]], on="dzień", how="outer").sort_values("dzień")
             else:
                 comp_df = meter_daily.copy()
                 comp_df["E_el_total"] = np.nan
