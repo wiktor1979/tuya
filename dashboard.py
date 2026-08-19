@@ -450,12 +450,14 @@ with tab_main:
         st.plotly_chart(fig_cop, width="stretch")
 
         st.subheader("📈 Przebieg wybranych parametrów")
-        all_codes = df["code"].unique().tolist()
+        # Zastosuj korektę czasu dla surowych danych przed filtrowaniem
+        df_corrected = apply_time_correction(df.copy(), time_offset_hours)
+        all_codes = df_corrected["code"].unique().tolist()
         default_temps = [c for c in ["tank_temp", "in_water_temp", "out_water_temp", "heat_temp_set", "amb_temp"] if c in all_codes]
         selected_temps = st.multiselect("Wybierz parametry do wyświetlenia:", options=all_codes, default=default_temps, format_func=get_param_label)
 
         if selected_temps:
-            temp_df = df[df["code"].isin(selected_temps) & df["val_num"].notnull()].copy()
+            temp_df = df_corrected[df_corrected["code"].isin(selected_temps) & df_corrected["val_num"].notnull()].copy()
             if resample_rule:
                 temp_df["czas"] = pd.to_datetime(temp_df["czas"])
                 temp_df = temp_df.groupby(["code", pd.Grouper(key="czas", freq=resample_rule)])["val_num"].mean().reset_index()
