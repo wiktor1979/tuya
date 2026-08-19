@@ -247,6 +247,20 @@ if not df.empty:
     df_pivot["defrost_num"] = df_pivot["defrost"].fillna(0).apply(lambda x: 1 if x else 0)
     df_pivot["defrost_start"] = ((df_pivot["defrost_num"] == 1) & (df_pivot["defrost_num"].shift(1, fill_value=0) == 0)).astype(int)
 
+    # Wykrywanie startów i czasu pracy sprężarki
+    # Kompresor pracuje gdy comp_freq > 5 Hz
+    df_pivot["comp_on"] = (df_pivot["comp_freq"] > 5).astype(int)
+    # Wykryj moment startu: zmiana z 0 na 1
+    df_pivot["comp_start"] = ((df_pivot["comp_on"] == 1) & (df_pivot["comp_on"].shift(1, fill_value=0) == 0)).astype(int)
+    
+    # Grupowanie okresów pracy - każdy start tworzy nową grupę
+    df_pivot["work_period"] = df_pivot["comp_start"].cumsum()
+    
+    # Oblicz czas trwania każdego okresu pracy w godzinach
+    # Dla każdego wiersza obliczamy dt_hours (różnica czasu od poprzedniego pomiaru)
+    # Następnie sumujemy dt_hours w ramach każdego okresu pracy
+    df_pivot["dt_hours_work"] = np.where(df_pivot["comp_on"] == 1, df_pivot["dt_hours"], 0.0)
+    
     # Agregacja dzienna dla pompy
     df_pivot["dzień"] = df_pivot["czas"].dt.date
     df_pivot["E_el_co_row"] = np.where(df_pivot["Tryb"] == "CO", df_pivot["E_el_kwh"], 0.0)
@@ -260,7 +274,9 @@ if not df.empty:
         "E_th_co_row": "sum",
         "E_th_cwu_row": "sum",
         "amb_temp": "mean",
-        "defrost_start": "sum"
+        "defrost_start": "sum",
+        "comp_start": "sum",  # liczba startów sprężarki
+        "dt_hours_work": "sum"  # całkowity czas pracy sprężarki w godzinach
     }).reset_index()
 
     daily_df["E_el_total"] = daily_df["E_el_co_row"] + daily_df["E_el_cwu_row"]
@@ -272,6 +288,9 @@ if not df.empty:
     avg_daily_el_cwu = daily_df["E_el_cwu_row"].sum() / num_days
     avg_amb_temp = df_pivot["amb_temp"].mean()
     total_defrosts = int(daily_df["defrost_start"].sum())
+    total_comp_starts = int(daily_df["comp_start"].sum())
+    total_work_hours = daily_df["dt_hours_work"].sum()
+    avg_work_time_per_start = (total_work_hours / total_comp_starts * 60) if total_comp_starts > 0 else 0.0  # w minutach
     
     # Agregacja dzienna dla wszystkich danych (do tabeli niezależnej od zakresu)
     df_all_time_processed = df_all_time.copy()
@@ -307,6 +326,11 @@ if not df.empty:
         df_all_pivot["dt_hours"] = df_all_pivot["czas"].diff().dt.total_seconds().fillna(0) / 3600.0
         df_all_pivot["E_el_kwh"] = df_all_pivot["P_el_kw"].shift(1).fillna(0) * df_all_pivot["dt_hours"]
         
+        # Wykrywanie startów i czasu pracy sprężarki dla danych historycznych
+        df_all_pivot["comp_on"] = (df_all_pivot["comp_freq"] > 5).astype(int)
+        df_all_pivot["comp_start"] = ((df_all_pivot["comp_on"] == 1) & (df_all_pivot["comp_on"].shift(1, fill_value=0) == 0)).astype(int)
+        df_all_pivot["dt_hours_work"] = np.where(df_all_pivot["comp_on"] == 1, df_all_pivot["dt_hours"], 0.0)
+        
         df_all_pivot["dzień"] = df_all_pivot["czas"].dt.date
         df_all_pivot["E_el_co_row"] = np.where(df_all_pivot["Tryb"] == "CO", df_all_pivot["E_el_kwh"], 0.0)
         df_all_pivot["E_el_cwu_row"] = np.where(df_all_pivot["Tryb"] == "CWU", df_all_pivot["E_el_kwh"], 0.0)
@@ -321,20 +345,23 @@ if not df.empty:
             "E_th_co_row": "sum",
             "E_th_cwu_row": "sum",
             "amb_temp": "mean",
-            "defrost_start": "sum"
+            "defrost_start": "sum",
+            "comp_start": "sum",
+            "dt_hours_work": "sum"
         }).reset_index()
         
         daily_df_all["E_el_total"] = daily_df_all["E_el_co_row"] + daily_df_all["E_el_cwu_row"]
         daily_df_all["E_th_total"] = daily_df_all["E_th_co_row"] + daily_df_all["E_th_cwu_row"]
         daily_df_all["SCOP_dzienny"] = np.where(daily_df_all["E_el_total"] > 0, daily_df_all["E_th_total"] / daily_df_all["E_el_total"], np.nan)
     else:
-        daily_df_all = pd.DataFrame(columns=["dzień", "E_el_co_row", "E_el_cwu_row", "E_el_total", "amb_temp", "defrost_start"])
+        daily_df_all = pd.DataFrame(columns=["dzień", "E_el_co_row", "E_el_cwu_row", "E_el_total", "amb_temp", "defrost_start", "comp_start", "dt_hours_work"])
 else:
     df_pivot = pd.DataFrame()
     daily_df = pd.DataFrame(columns=["dzień", "E_el_total"])
-    daily_df_all = pd.DataFrame(columns=["dzień", "E_el_co_row", "E_el_cwu_row", "E_el_total", "amb_temp", "defrost_start"])
+    daily_df_all = pd.DataFrame(columns=["dzień", "E_el_co_row", "E_el_cwu_row", "E_el_total", "amb_temp", "defrost_start", "comp_start", "dt_hours_work"])
     e_el_co = e_el_cwu = e_th_co = e_th_cwu = e_th_total = e_el_total = scop_total = scop_co = scop_cwu = 0.0
-    avg_daily_el_co = avg_daily_el_cwu = total_defrosts = 0
+    avg_daily_el_co = avg_daily_el_cwu = total_defrosts = total_comp_starts = 0
+    total_work_hours = avg_work_time_per_start = 0.0
     avg_amb_temp = np.nan
 
 # --- ZAKŁADKI DASHBOARDU ---
@@ -430,6 +457,11 @@ with tab_scop:
         d_col2.metric("⚡ Śr. dzienne zużycie CWU", f"{avg_daily_el_cwu:.2f} kWh/dzień")
         d_col3.metric("🌡️ Średniodobowa temp. zewn.", f"{avg_amb_temp:.1f} °C" if not np.isnan(avg_amb_temp) else "Brak danych")
         d_col4.metric("❄️ Liczba defrostów (okres)", f"{total_defrosts}")
+        
+        d_col5, d_col6, d_col7 = st.columns(3)
+        d_col5.metric("🔁 Liczba startów sprężarki (okres)", f"{total_comp_starts}")
+        d_col6.metric("⏱️ Średni czas pracy sprężarki", f"{avg_work_time_per_start:.1f} min")
+        d_col7.metric("🕐 Całkowity czas pracy sprężarki", f"{total_work_hours:.1f} h")
 
         st.markdown("---")
         st.subheader("⚡ Zużycie Prądu i Wygenerowane Ciepło [kWh] (Całkowite)")
@@ -501,6 +533,28 @@ with tab_diag:
             else:
                 st.success(f"🟢 **Cykliczność w normie:** Starty: **{starts_count}**")
 
+        st.markdown("---")
+        st.subheader("📊 Tabela: Statystyki dzienne pracy sprężarki")
+        
+        # Przygotowanie tabeli z danymi dziennymi
+        daily_comp_stats = daily_df_all[["dzień", "comp_start", "dt_hours_work"]].copy()
+        daily_comp_stats.columns = ["Data", "Liczba startów", "Czas pracy [h]"]
+        
+        # Oblicz średni czas pracy na jeden start (w minutach)
+        daily_comp_stats["Śr. czas pracy/start [min]"] = np.where(
+            daily_comp_stats["Liczba startów"] > 0,
+            (daily_comp_stats["Czas pracy [h]"] / daily_comp_stats["Liczba startów"]) * 60,
+            0.0
+        )
+        
+        # Zaokrąglenie wartości
+        daily_comp_stats["Czas pracy [h]"] = daily_comp_stats["Czas pracy [h]"].round(2)
+        daily_comp_stats["Śr. czas pracy/start [min]"] = daily_comp_stats["Śr. czas pracy/start [min]"].round(1)
+        daily_comp_stats["Liczba startów"] = daily_comp_stats["Liczba startów"].astype(int)
+        
+        # Wyświetlenie tabeli
+        st.dataframe(daily_comp_stats, width="stretch", hide_index=True, use_container_width=True)
+        
         st.markdown("---")
         st.subheader("1️⃣ Odbiór ciepła przez instalację (Różnica temperatur ΔT)")
         fig_dt = go.Figure()
@@ -644,8 +698,8 @@ with tab_meter:
             meter_daily = df_interp_daily.dropna(subset=["Zuzycie_Licznik_kWh"])[["dzień", "Zuzycie_Licznik_kWh"]].reset_index(drop=True)
 
             # Połączenie ze statystykami dziennymi wyliczonymi przez pompę
-            if not daily_df.empty:
-                comp_df = pd.merge(meter_daily, daily_df[["dzień", "E_el_total"]], on="dzień", how="outer").sort_values("dzień")
+            if not daily_df_all.empty:
+                comp_df = pd.merge(meter_daily, daily_df_all[["dzień", "E_el_total"]], on="dzień", how="outer").sort_values("dzień")
             else:
                 comp_df = meter_daily.copy()
                 comp_df["E_el_total"] = np.nan
