@@ -111,6 +111,24 @@ st.sidebar.header("🛠️ Kalibracja strat mocy")
 standby_power_w = st.sidebar.number_input("Pobór w spoczynku (elektronika) [W]", min_value=0, max_value=100, value=20, step=5)
 active_power_w = st.sidebar.number_input("Pobór pracy (wentylator, pompa obieg.) [W]", min_value=0, max_value=300, value=140, step=10)
 
+st.sidebar.header("🕐 Korekta czasu serwera")
+time_offset_hours = st.sidebar.slider(
+    "Przesunięcie czasu (godziny)",
+    min_value=-12,
+    max_value=12,
+    value=2,
+    step=1,
+    help="Dodaje przesunięcie do czasu serwera, aby wyświetlać prawidłowy czas lokalny"
+)
+
+def apply_time_correction(df: pd.DataFrame, offset_hours: int) -> pd.DataFrame:
+    """Dodaje przesunięcie czasu do kolumny 'czas' w DataFrame."""
+    if df is None or df.empty or 'czas' not in df.columns:
+        return df
+    df_corrected = df.copy()
+    df_corrected['czas'] = pd.to_datetime(df_corrected['czas']) + pd.Timedelta(hours=offset_hours)
+    return df_corrected
+
 def load_pump_data(hours: int, all_time: bool = False) -> pd.DataFrame:
     """Ładuje dane wyłącznie ze sterownika pompy ciepła."""
     conn = sqlite3.connect(DB_FILE)
@@ -152,6 +170,9 @@ def load_manual_readings() -> pd.DataFrame:
     """
     df_man = pd.read_sql_query(query, conn)
     conn.close()
+    if not df_man.empty and 'czas' in df_man.columns:
+        df_man["czas"] = pd.to_datetime(df_man["czas"])
+        df_man = apply_time_correction(df_man, time_offset_hours)
     return df_man
 
 if st.button("🔄 Odśwież dane"):
@@ -172,6 +193,7 @@ if not df.empty:
 
     df_pivot = df.pivot_table(index="czas", columns="code", values="val_combined", aggfunc="first").reset_index()
     df_pivot["czas"] = pd.to_datetime(df_pivot["czas"])
+    df_pivot = apply_time_correction(df_pivot, time_offset_hours)
     df_pivot = df_pivot.sort_values("czas")
 
     needed_cols = ["out_water_temp", "in_water_temp", "flow_rate", "ac_vol", "ac_curr", "comp_freq", "disc_temp", "amb_temp", "valve", "heat_temp_set", "defrost"]
@@ -278,7 +300,11 @@ if not df.empty:
         "comp_start": "sum",  # liczba startów sprężarki
         "dt_hours_work": "sum"  # całkowity czas pracy sprężarki w godzinach
     }).reset_index()
-
+    
+    # Korekta czasu dla kolumny 'dzień' (pochodzącej z daty)
+    if not daily_df.empty and 'dzień' in daily_df.columns:
+        daily_df['dzień'] = pd.to_datetime(daily_df['dzień']).dt.date + pd.Timedelta(days=1 if time_offset_hours >= 12 else 0)
+    
     daily_df["E_el_total"] = daily_df["E_el_co_row"] + daily_df["E_el_cwu_row"]
     daily_df["E_th_total"] = daily_df["E_th_co_row"] + daily_df["E_th_cwu_row"]
     daily_df["SCOP_dzienny"] = np.where(daily_df["E_el_total"] > 0, daily_df["E_th_total"] / daily_df["E_el_total"], np.nan)
@@ -301,6 +327,7 @@ if not df.empty:
         
         df_all_pivot = df_all_time_processed.pivot_table(index="czas", columns="code", values="val_combined", aggfunc="first").reset_index()
         df_all_pivot["czas"] = pd.to_datetime(df_all_pivot["czas"])
+        df_all_pivot = apply_time_correction(df_all_pivot, time_offset_hours)
         df_all_pivot = df_all_pivot.sort_values("czas")
         
         for col in needed_cols:
@@ -349,6 +376,10 @@ if not df.empty:
             "comp_start": "sum",
             "dt_hours_work": "sum"
         }).reset_index()
+        
+        # Korekta czasu dla kolumny 'dzień' (pochodzącej z daty)
+        if not daily_df_all.empty and 'dzień' in daily_df_all.columns:
+            daily_df_all['dzień'] = pd.to_datetime(daily_df_all['dzień']).dt.date + pd.Timedelta(days=1 if time_offset_hours >= 12 else 0)
         
         daily_df_all["E_el_total"] = daily_df_all["E_el_co_row"] + daily_df_all["E_el_cwu_row"]
         daily_df_all["E_th_total"] = daily_df_all["E_th_co_row"] + daily_df_all["E_th_cwu_row"]
@@ -668,6 +699,7 @@ with tab_meter:
     else:
         df_display = df_meter_all.copy()
         df_display["czas_dt"] = pd.to_datetime(df_display["czas"])
+        # Korekta czasu już została zastosowana w load_manual_readings(), więc tylko sortujemy
         df_display = df_display.sort_values("czas_dt").reset_index(drop=True)
 
         # Różnice pomiędzy kolejnymi wpisami
@@ -693,6 +725,8 @@ with tab_meter:
             df_interp = df_display.set_index("czas_dt")[["stan_kwh"]].resample("1h").interpolate(method="time")
             df_interp_daily = df_interp.resample("1D").first()
             df_interp_daily["Zuzycie_Licznik_kWh"] = df_interp_daily["stan_kwh"].diff().shift(-1)
+            # Korekta czasu dla daty dziennej - przesunięcie o dzień jeśli offset >= 12h
+            df_interp_daily.index = df_interp_daily.index + pd.Timedelta(days=1 if time_offset_hours >= 12 else 0)
             df_interp_daily["dzień"] = df_interp_daily.index.date
             
             meter_daily = df_interp_daily.dropna(subset=["Zuzycie_Licznik_kWh"])[["dzień", "Zuzycie_Licznik_kWh"]].reset_index(drop=True)
