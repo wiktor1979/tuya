@@ -853,37 +853,43 @@ with tab_weather:
             # Wykres czasowy: temperatura + COP
             st.subheader("📊 Przebieg czasowy: Temperatura zewnętrzna i COP")
             
-            if 'amb_temp' in df_pivot.columns:
+            if 'amb_temp' in df_pivot.columns and not df_pivot['amb_temp'].isna().all():
                 fig_dual = go.Figure()
                 
-                fig_dual.add_trace(go.Scatter(
-                    x=df_pivot['czas'],
-                    y=df_pivot['amb_temp'],
-                    mode='lines',
-                    name='Temp. zewn. [°C]',
-                    line=dict(color='#3498DB', width=2),
-                    yaxis='y1'
-                ))
+                # Filtruj dane do niepustych wartości temperatury
+                temp_df = df_pivot[df_pivot['amb_temp'].notna()].copy()
                 
-                fig_dual.add_trace(go.Scatter(
-                    x=df_pivot['czas'],
-                    y=df_pivot['COP'],
-                    mode='lines',
-                    name='COP',
-                    line=dict(color='#E67E22', width=2),
-                    yaxis='y2'
-                ))
-                
-                fig_dual.update_layout(
-                    title="Temperatura zewnętrzna vs COP w czasie",
-                    xaxis=dict(title="Czas"),
-                    yaxis=dict(title="Temperatura [°C]", overlaying='y2'),
-                    yaxis2=dict(title="COP", side='right', overlaying='y'),
-                    hovermode='x unified',
-                    legend=dict(x=0, y=1.1, orientation='h')
-                )
-                
-                st.plotly_chart(fig_dual, use_container_width=True)
+                if not temp_df.empty:
+                    fig_dual.add_trace(go.Scatter(
+                        x=temp_df['czas'],
+                        y=temp_df['amb_temp'],
+                        mode='lines',
+                        name='Temp. zewn. [°C]',
+                        line=dict(color='#3498DB', width=2),
+                        yaxis='y1'
+                    ))
+                    
+                    fig_dual.add_trace(go.Scatter(
+                        x=df_pivot['czas'],
+                        y=df_pivot['COP'],
+                        mode='lines',
+                        name='COP',
+                        line=dict(color='#E67E22', width=2),
+                        yaxis='y2'
+                    ))
+                    
+                    fig_dual.update_layout(
+                        title="Temperatura zewnętrzna vs COP w czasie",
+                        xaxis=dict(title="Czas"),
+                        yaxis=dict(title="Temperatura [°C]", overlaying='y2'),
+                        yaxis2=dict(title="COP", side='right', overlaying='y'),
+                        hovermode='x unified',
+                        legend=dict(x=0, y=1.1, orientation='h')
+                    )
+                    
+                    st.plotly_chart(fig_dual, use_container_width=True)
+                else:
+                    st.info("Brak danych o temperaturze zewnętrznej w wybranym zakresie czasu.")
         
         else:
             st.warning("Nie udało się wygenerować raportu korelacji pogodowej. Sprawdź czy dane pogodowe są dostępne.")
