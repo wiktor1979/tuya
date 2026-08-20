@@ -13,6 +13,14 @@ from db import (
     update_manual_energy_reading, 
     delete_manual_energy_reading
 )
+from app.services.analytics import (
+    detect_short_cycles,
+    analyze_inverter_performance,
+    analyze_mode_runtime,
+    correlate_weather_performance,
+    generate_diagnostic_report
+)
+from app.services.database import get_db_connection, get_weather_data
 
 # --- KONFIGURACJA STRONY ---
 st.set_page_config(page_title="Monitor Pompy Ciepła", layout="wide", page_icon="🔥")
@@ -395,11 +403,34 @@ else:
     total_work_hours = avg_work_time_per_start = 0.0
     avg_amb_temp = np.nan
 
+# --- ZAŁADOWANIE DANYCH POGODOWYCH DO KORELACJI ---
+weather_df = pd.DataFrame()
+if not df_pivot.empty:
+    try:
+        weather_data = get_weather_data(days=30)
+        if weather_data:
+            weather_df = pd.DataFrame(weather_data, columns=['id', 'timestamp', 'temperature', 'humidity', 'pressure', 'wind_speed', 'precipitation', 'cloud_cover', 'created_at'])
+    except Exception as e:
+        st.warning(f"Nie udało się załadować danych pogodowych: {e}")
+
+# --- GENEROWANIE RAPORTU DIAGNOSTYCZNEGO (dla zakładki Diagnostyka) ---
+diagnostic_report = None
+if not df_pivot.empty:
+    try:
+        diagnostic_report = generate_diagnostic_report(
+            df=df_pivot,
+            weather_df=weather_df,
+            electricity_price_kwh=0.80  # zł/kWh - można dodać do UI
+        )
+    except Exception as e:
+        st.warning(f"Błąd generowania raportu diagnostycznego: {e}")
+
 # --- ZAKŁADKI DASHBOARDU ---
-tab_main, tab_scop, tab_diag, tab_meter, tab_export = st.tabs([
+tab_main, tab_scop, tab_diag, tab_weather, tab_meter, tab_export = st.tabs([
     "📊 Panel Główny", 
     "🏆 Bilans Energetyczny & SCOP", 
     "🏥 Diagnostyka Pompy",
+    "🌤️ Kontekst Pogodowy",
     "⚡ Fizyczny Licznik Energii",
     "📁 Eksport Danych"
 ])
@@ -531,6 +562,105 @@ with tab_diag:
     if df.empty:
         st.info("Brak danych diagnostycznych.")
     else:
+        # --- SEKCJA 1: RAPORT ZAAWANSOWANEJ DIAGNOSTYKI ---
+        st.subheader("📋 Raport Zaawansowanej Diagnostyki")
+        
+        if diagnostic_report:
+            # Kolumny z kluczowymi metrykami
+            diag_col1, diag_col2, diag_col3, diag_col4 = st.columns(4)
+            
+            # Cykle krótkie
+            short_cycles_count = len(diagnostic_report.short_cycles)
+            if short_cycles_count > 0:
+                diag_col1.warning(f"⚠️ Wykryto cykli krótkich: **{short_cycles_count}**")
+                total_wasted = sum(c.energy_wasted_kwh for c in diagnostic_report.short_cycles)
+                diag_col1.metric("Energia zmarnowana na cykle", f"{total_wasted:.2f} kWh")
+            else:
+                diag_col1.success("✅ Brak cykli krótkich")
+            
+            # Analiza inwertera
+            if diagnostic_report.inverter_analysis:
+                inv = diagnostic_report.inverter_analysis
+                diag_col2.metric("Śr. częstotliwość sprężarki", f"{inv.avg_frequency:.1f} Hz")
+                diag_col2.metric("Stabilność pracy", f"{inv.stability_score:.0f}/100")
+                if inv.frequent_starts > 10:
+                    diag_col2.warning(f"Częste starty: {inv.frequent_starts}")
+            
+            # Analiza trybów
+            if diagnostic_report.mode_analysis:
+                mode = diagnostic_report.mode_analysis
+                diag_col3.metric("Czas pracy CO", f"{mode.co_runtime_hours:.1f} h")
+                diag_col3.metric("Czas pracy CWU", f"{mode.cwu_runtime_hours:.1f} h")
+                diag_col3.metric("Przełączeń trybów", f"{mode.mode_transitions}")
+            
+            # Korelacja pogodowa
+            if diagnostic_report.weather_correlation:
+                weather = diagnostic_report.weather_correlation
+                diag_col4.metric("Śr. temperatura zewn.", f"{weather.temp_outside_avg:.1f}°C")
+                corr = weather.cop_vs_temp_correlation
+                diag_col4.metric("Korelacja COP↔Temp", f"{corr:.2f}")
+            
+            st.markdown("---")
+            
+            # Rekomendacje
+            if diagnostic_report.recommendations:
+                st.subheader("💡 Rekomendacje")
+                for i, rec in enumerate(diagnostic_report.recommendations, 1):
+                    if "krótkich" in rec.lower() or "taktowanie" in rec.lower():
+                        st.error(f"**{i}.** {rec}")
+                    elif "optymalizacji" in rec.lower() or "efektywności" in rec.lower():
+                        st.warning(f"**{i}.** {rec}")
+                    else:
+                        st.info(f"**{i}.** {rec}")
+            
+            st.markdown("---")
+            st.subheader("📊 Szczegółowa analiza inwertera")
+            
+            if diagnostic_report.inverter_analysis:
+                inv = diagnostic_report.inverter_analysis
+                inv_col1, inv_col2, inv_col3 = st.columns(3)
+                inv_col1.metric("Min częstotliwość", f"{inv.min_frequency:.1f} Hz")
+                inv_col1.metric("Max częstotliwość", f"{inv.max_frequency:.1f} Hz")
+                inv_col2.metric("Odchylenie std", f"{inv.std_frequency:.1f} Hz")
+                inv_col2.metric("Efektywność modulacji", f"{inv.modulation_efficiency:.1f}%")
+                inv_col3.metric("Czas w zakresie opt. (30-60 Hz)", f"{inv.optimal_range_pct:.1f}%")
+                
+                # Wykres rozkładu częstotliwości
+                if 'comp_freq' in df_pivot.columns:
+                    fig_hist = px.histogram(
+                        df_pivot[df_pivot['comp_freq'] > 0],
+                        x='comp_freq',
+                        nbins=30,
+                        title="Rozkład częstotliwości pracy sprężarki",
+                        labels={'comp_freq': 'Częstotliwość [Hz]'},
+                        color_discrete_sequence=['#3498DB']
+                    )
+                    fig_hist.add_vrect(x0=30, x1=60, fillcolor="green", opacity=0.15, 
+                                       annotation_text="Zakres optymalny (30-60 Hz)", annotation_position="top")
+                    st.plotly_chart(fig_hist, use_container_width=True)
+            
+            st.markdown("---")
+            st.subheader("🔄 Analiza cykli krótkich")
+            
+            if diagnostic_report.short_cycles:
+                cycles_data = []
+                for cycle in diagnostic_report.short_cycles:
+                    cycles_data.append({
+                        "Start": cycle.start_time.strftime("%Y-%m-%d %H:%M"),
+                        "Koniec": cycle.end_time.strftime("%Y-%m-%d %H:%M"),
+                        "Czas trwania [s]": cycle.duration_sec,
+                        "Czas wyłączenia przed [s]": cycle.off_duration_sec,
+                        "Śr. COP": f"{cycle.cop_avg:.2f}",
+                        "Strata energii [kWh]": f"{cycle.energy_wasted_kwh:.3f}"
+                    })
+                cycles_df = pd.DataFrame(cycles_data)
+                st.dataframe(cycles_df, use_container_width=True, hide_index=True)
+            else:
+                st.success("✅ Nie wykryto cykli krótkich w analizowanym okresie.")
+        
+        st.markdown("---")
+        
+        # --- SEKCJA 2: STANDARDOWA DIAGNOSTYKA ---
         st.subheader("⚠️ Status Pracy i Ostrzeżenia")
         col_a1, col_a2, col_a3 = st.columns(3)
 
@@ -604,7 +734,152 @@ with tab_diag:
         fig_disc.update_layout(hovermode="x unified", xaxis_title="Czas", yaxis_title="Wartość")
         st.plotly_chart(fig_disc, width="stretch")
 
-# --- ZAKŁADKA 4: FIZYCZNY LICZNIK ENERGII (FORMULARZ & WYKRES) ---
+# --- ZAKŁADKA 4: KONTEKST POGODOWY ---
+with tab_weather:
+    st.header("🌤️ Kontekst Pogodowy i Wpływ na Wydajność")
+    
+    if df_pivot.empty:
+        st.info("Brak danych do analizy korelacji pogodowych.")
+    else:
+        if diagnostic_report and diagnostic_report.weather_correlation:
+            weather = diagnostic_report.weather_correlation
+            
+            # Kolumny z metrykami pogodowymi
+            wx_col1, wx_col2, wx_col3, wx_col4 = st.columns(4)
+            
+            wx_col1.metric("Średnia temperatura zewn.", f"{weather.temp_outside_avg:.1f}°C")
+            wx_col2.metric("Korelacja COP↔Temp", f"{weather.cop_vs_temp_correlation:.2f}", 
+                          help="Współczynnik korelacji Pearsona (-1 do 1). Wartości dodatnie oznaczają że COP rośnie z temperaturą.")
+            wx_col3.metric("Spadek COP na °C", f"{weather.efficiency_drop_per_degree:.3f}",
+                          help="O ile spada COP przy spadku temperatury o 1°C")
+            wx_col4.metric("HDD (Heating Degree Days)", f"{weather.heating_degree_days:.1f}",
+                          help="Stopniodni grzania - miara chłodu okresu")
+            
+            st.markdown("---")
+            
+            # Zakresy temperatur i COP
+            st.subheader("📊 COP w zależności od zakresu temperatury")
+            
+            if weather.cop_at_temp_ranges:
+                ranges_df = pd.DataFrame([
+                    {"Zakres temp.": range_label.replace("_", " ").title(), "Śr. COP": cop}
+                    for range_label, cop in weather.cop_at_temp_ranges.items()
+                ])
+                st.dataframe(ranges_df, use_container_width=True, hide_index=True)
+                
+                # Wykres słupkowy COP vs temperature ranges
+                fig_cop_ranges = px.bar(
+                    ranges_df,
+                    x="Zakres temp.",
+                    y="Śr. COP",
+                    title="Średnie COP w różnych zakresach temperatur zewnętrznych",
+                    labels={"Zakres temp.": "Zakres temperatury [°C]", "Śr. COP": "COP"},
+                    color="Śr. COP",
+                    color_continuous_scale="RdYlGn"
+                )
+                fig_cop_ranges.update_layout(coloraxis_showscale=False)
+                st.plotly_chart(fig_cop_ranges, use_container_width=True)
+            
+            st.markdown("---")
+            
+            # Optymalny zakres temperatur
+            opt_range = weather.optimal_temp_range
+            if opt_range[0] != opt_range[1]:
+                st.success(f"🎯 **Optymalny zakres temperatur dla najlepszego COP:** {opt_range[0]:.1f}°C do {opt_range[1]:.1f}°C")
+            
+            st.markdown("---")
+            
+            # Wykres scatter: COP vs temperatura zewnętrzna
+            st.subheader("📈 Korelacja COP z temperaturą zewnętrzną")
+            
+            if 'amb_temp' in df_pivot.columns and not df_pivot['amb_temp'].isna().all():
+                scatter_df = df_pivot[['czas', 'COP', 'amb_temp']].dropna().copy()
+                
+                if not scatter_df.empty:
+                    fig_scatter = px.scatter(
+                        scatter_df,
+                        x='amb_temp',
+                        y='COP',
+                        color='Tryb',
+                        size='P_el_kw',
+                        hover_data=['czas'],
+                        title="Zależność COP od temperatury zewnętrznej (rozmiar = moc elektryczna)",
+                        labels={
+                            'amb_temp': 'Temperatura zewnętrzna [°C]',
+                            'COP': 'COP',
+                            'Tryb': 'Tryb pracy'
+                        },
+                        color_discrete_map={"CO": "#2ECC71", "CWU": "#E67E22"}
+                    )
+                    
+                    # Dodaj linię trendu
+                    import numpy as np
+                    if len(scatter_df) > 10:
+                        z = np.polyfit(scatter_df['amb_temp'].dropna(), scatter_df['COP'].dropna(), 1)
+                        p = np.poly1d(z)
+                        fig_scatter.add_trace(go.Scatter(
+                            x=scatter_df['amb_temp'].sort_values(),
+                            y=p(scatter_df['amb_temp'].sort_values()),
+                            mode='lines',
+                            name='Trend liniowy',
+                            line=dict(color='red', width=2, dash='dash')
+                        ))
+                    
+                    st.plotly_chart(fig_scatter, use_container_width=True)
+            
+            st.markdown("---")
+            
+            # Wykres czasowy: temperatura + COP
+            st.subheader("📊 Przebieg czasowy: Temperatura zewnętrzna i COP")
+            
+            if 'amb_temp' in df_pivot.columns:
+                fig_dual = go.Figure()
+                
+                fig_dual.add_trace(go.Scatter(
+                    x=df_pivot['czas'],
+                    y=df_pivot['amb_temp'],
+                    mode='lines',
+                    name='Temp. zewn. [°C]',
+                    line=dict(color='#3498DB', width=2),
+                    yaxis='y1'
+                ))
+                
+                fig_dual.add_trace(go.Scatter(
+                    x=df_pivot['czas'],
+                    y=df_pivot['COP'],
+                    mode='lines',
+                    name='COP',
+                    line=dict(color='#E67E22', width=2),
+                    yaxis='y2'
+                ))
+                
+                fig_dual.update_layout(
+                    title="Temperatura zewnętrzna vs COP w czasie",
+                    xaxis=dict(title="Czas"),
+                    yaxis=dict(title="Temperatura [°C]", overlaying='y2'),
+                    yaxis2=dict(title="COP", side='right', overlaying='y'),
+                    hovermode='x unified',
+                    legend=dict(x=0, y=1.1, orientation='h')
+                )
+                
+                st.plotly_chart(fig_dual, use_container_width=True)
+        
+        else:
+            st.warning("Nie udało się wygenerować raportu korelacji pogodowej. Sprawdź czy dane pogodowe są dostępne.")
+        
+        # Tabela z danymi pogodowymi
+        st.markdown("---")
+        st.subheader("📋 Ostatnie dane pogodowe z bazy")
+        
+        if not weather_df.empty:
+            weather_display = weather_df[['timestamp', 'temperature', 'humidity', 'pressure', 'wind_speed']].copy()
+            weather_display['timestamp'] = pd.to_datetime(weather_display['timestamp'], unit='s').dt.strftime('%Y-%m-%d %H:%M')
+            weather_display.columns = ['Czas', 'Temp. [°C]', 'Wilgotność [%]', 'Ciśnienie [hPa]', 'Wiatr [m/s]']
+            st.dataframe(weather_display.head(20), use_container_width=True, hide_index=True)
+        else:
+            st.info("Brak zapisanych danych pogodowych w bazie. Upewnij się że usługa pobierania pogody działa.")
+
+# --- ZAKŁADKA 5: FIZYCZNY LICZNIK ENERGII (FORMULARZ & WYKRES) ---
 with tab_meter:
     st.header("⚡ Rejestracja i Analiza Fizycznego Licznika Energii")
     st.caption(f"Dane wprowadzane ręcznie są rejestrowane w bazie pod identyfikatorem urządzenia: `{MANUAL_METER_DEV_ID}`.")
