@@ -19,7 +19,9 @@ def get_tuya_accounts() -> List[Dict[str, any]]:
 
 
 class DeadbandFilter:
-    """Filtr deadband dla telemetrii."""
+    """Filtr deadband dla telemetrii - zoptymalizowana wersja."""
+    
+    __slots__ = ['last_saved_val', 'last_saved_time']
     
     def __init__(self):
         self.last_saved_val: Dict[str, Any] = {}

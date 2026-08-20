@@ -1,27 +1,32 @@
 ```
-# Compiled and build artifacts
-*.pyc
+# Python
 __pycache__/
+*.pyc
+*.pyo
+*.pyd
 
 # Dependencies
-.venv/
 venv/
-pip-tools/
-
-# Logs and temp files
-*.log
-*.tmp
-*.swp
-
-# Environment
+.venv/
 .env
 .env.local
 *.env.*
 
-# Editors
+# Logs
+*.log
+
+# Coverage
+.coverage
+coverage/
+htmlcov/
+
+# IDE
 .vscode/
 .idea/
+*.swp
+*.swo
 
-# Original rules preserved
-pip-tools/
+# OS
+.DS_Store
+Thumbs.db
 ```
