@@ -67,6 +67,11 @@ THRESHOLDS = {
 
 MAX_HEARTBEAT_SEC = 300  # Wymuś zapis co najmniej raz na 5 minut
 
+# Konfiguracja lokalizacji dla danych pogodowych (Open-Meteo)
+LATITUDE = float(os.environ.get("LATITUDE", 51.7592))  # Łódź
+LONGITUDE = float(os.environ.get("LONGITUDE", 19.4560))  # Łódź
+LOCATION_NAME = os.environ.get("LOCATION_NAME", "Łódź")
+
 # Metadane parametrów pompy
 PARAM_INFO = {
     "in_water_temp": {"label": "Powrót CO", "desc": "Temperatura wody powracającej z instalacji grzewczej"},
