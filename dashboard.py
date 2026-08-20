@@ -134,7 +134,7 @@ electricity_price = st.sidebar.number_input(
     "Cena prądu [zł/kWh]",
     min_value=0.0,
     max_value=5.0,
-    value=0.85,
+    value=1.00,
     step=0.01,
     help="Cena energii elektrycznej używana do obliczeń kosztów eksploatacji pompy ciepła"
 )
