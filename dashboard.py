@@ -113,7 +113,6 @@ resample_rule = resample_map[selected_resample]
 
 st.sidebar.header("⚙️ Kalkulator COP")
 cos_phi = st.sidebar.slider("Współczynnik mocy (cos φ)", 0.80, 1.00, 1.00, 0.01)
-ac_curr_div = st.sidebar.selectbox("Dzielnik prądu (ac_curr)", [1, 10, 100], index=1)
 
 st.sidebar.header("🛠️ Kalibracja strat mocy")
 standby_power_w = st.sidebar.number_input("Pobór w spoczynku (elektronika) [W]", min_value=0, max_value=100, value=20, step=5)
@@ -243,7 +242,7 @@ if not df.empty:
     df_pivot["Tryb"] = np.where(df_pivot["valve"] >= 0.5, "CWU", "CO")
 
     # Obliczenia fizyczne
-    curr_a = df_pivot["ac_curr"] / ac_curr_div
+    curr_a = df_pivot["ac_curr"] / 10
     df_pivot["flow_m3h"] = df_pivot["flow_rate"] / 10.0
     df_pivot["delta_t"] = df_pivot["out_water_temp"] - df_pivot["in_water_temp"]
 
@@ -357,7 +356,7 @@ if not df.empty:
         df_all_pivot["valve"] = df_all_pivot["valve"].fillna(0).astype(float)
         df_all_pivot["Tryb"] = np.where(df_all_pivot["valve"] >= 0.5, "CWU", "CO")
         
-        curr_a_all = df_all_pivot["ac_curr"] / ac_curr_div
+        curr_a_all = df_all_pivot["ac_curr"] / 10
         df_all_pivot["flow_m3h"] = df_all_pivot["flow_rate"] / 10.0
         df_all_pivot["delta_t"] = df_all_pivot["out_water_temp"] - df_all_pivot["in_water_temp"]
         
