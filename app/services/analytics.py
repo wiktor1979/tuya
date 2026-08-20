@@ -216,11 +216,21 @@ def analyze_inverter_performance(df: pd.DataFrame) -> InverterAnalysis:
             frequent_starts=0, optimal_range_pct=0.0
         )
     
-    # Podstawowe statystyki
-    avg_freq = freq.mean()
-    max_freq = freq.max()
-    min_freq = freq.min()
-    std_freq = freq.std() if len(freq) > 1 else 0.0
+    # Filtruj dane - uwzględnij tylko gdy sprężarka pracuje (powyżej 3 Hz)
+    freq_running = freq[freq > 3]
+    
+    if len(freq_running) == 0:
+        return InverterAnalysis(
+            avg_frequency=0.0, max_frequency=0.0, min_frequency=0.0,
+            std_frequency=0.0, stability_score=0.0, modulation_efficiency=0.0,
+            frequent_starts=0, optimal_range_pct=0.0
+        )
+    
+    # Podstawowe statystyki tylko dla czasu pracy sprężarki
+    avg_freq = freq_running.mean()
+    max_freq = freq_running.max()
+    min_freq = freq_running.min()
+    std_freq = freq_running.std() if len(freq_running) > 1 else 0.0
     
     # Stabilność: niższe odchylenie = wyższy score (0-100)
     # Przyjmujemy że std < 5 Hz to excellent, std > 30 Hz to poor
