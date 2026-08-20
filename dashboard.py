@@ -850,6 +850,68 @@ with tab_weather:
             
             st.markdown("---")
             
+            # Wykres porównawczy: temperatura z serwisu internetowego vs pompa ciepła
+            st.subheader("🌡️ Porównanie temperatury: Serwis pogodowy vs Pompa ciepła")
+            
+            if not weather_df.empty and 'amb_temp' in df_pivot.columns:
+                # Przygotowanie danych do wykresu
+                weather_df_copy = weather_df.copy()
+                weather_df_copy['timestamp'] = pd.to_datetime(weather_df_copy['timestamp'], unit='s')
+                
+                # Filtrowanie do zakresu czasowego df_pivot
+                if not df_pivot.empty and 'czas' in df_pivot.columns:
+                    min_time = df_pivot['czas'].min()
+                    max_time = df_pivot['czas'].max()
+                    weather_filtered = weather_df_copy[
+                        (weather_df_copy['timestamp'] >= min_time) & 
+                        (weather_df_copy['timestamp'] <= max_time)
+                    ].copy()
+                    
+                    if not weather_filtered.empty:
+                        fig_compare = go.Figure()
+                        
+                        # Temperatura z serwisu internetowego (linia ciągła)
+                        fig_compare.add_trace(go.Scatter(
+                            x=weather_filtered['timestamp'],
+                            y=weather_filtered['temperature'],
+                            mode='lines',
+                            name='Serwis pogodowy (Open-Meteo)',
+                            line=dict(color='#3498DB', width=2),
+                            yaxis='y1'
+                        ))
+                        
+                        # Temperatura z pompy ciepła (linia przerywana)
+                        pump_temp_df = df_pivot[df_pivot['amb_temp'].notna()].copy()
+                        if not pump_temp_df.empty:
+                            fig_compare.add_trace(go.Scatter(
+                                x=pump_temp_df['czas'],
+                                y=pump_temp_df['amb_temp'],
+                                mode='lines',
+                                name='Pompa ciepła (odczyt)',
+                                line=dict(color='#E74C3C', width=2, dash='dash'),
+                                yaxis='y1'
+                            ))
+                        
+                        fig_compare.update_layout(
+                            title="Porównanie temperatury zewnętrznej: dane pogodowe vs odczyt z pompy",
+                            xaxis=dict(title="Czas"),
+                            yaxis=dict(title="Temperatura [°C]"),
+                            hovermode='x unified',
+                            legend=dict(x=0, y=1.1, orientation='h')
+                        )
+                        
+                        st.plotly_chart(fig_compare, use_container_width=True)
+                    else:
+                        st.info("Brak danych pogodowych w wybranym zakresie czasu.")
+                else:
+                    st.info("Brak danych temperaturowych z pompy ciepła.")
+            elif weather_df.empty:
+                st.info("Brak danych pogodowych z serwisu internetowego.")
+            else:
+                st.info("Brak danych o temperaturze zewnętrznej z pompy ciepła.")
+            
+            st.markdown("---")
+            
             # Wykres czasowy: temperatura + COP
             st.subheader("📊 Przebieg czasowy: Temperatura zewnętrzna i COP")
             
