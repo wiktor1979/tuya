@@ -115,8 +115,8 @@ st.sidebar.header("⚙️ Kalkulator COP")
 cos_phi = st.sidebar.slider("Współczynnik mocy (cos φ)", 0.80, 1.00, 1.00, 0.01)
 
 st.sidebar.header("🛠️ Kalibracja strat mocy")
-standby_power_w = st.sidebar.number_input("Pobór w spoczynku (elektronika) [W]", min_value=0, max_value=100, value=20, step=5)
-active_power_w = st.sidebar.number_input("Pobór pracy (wentylator, pompa obieg.) [W]", min_value=0, max_value=300, value=140, step=10)
+standby_power_w = st.sidebar.number_input("Pobór w spoczynku (elektronika) [W]", min_value=0, max_value=100, value=15, step=5)
+active_power_w = st.sidebar.number_input("Pobór pracy (wentylator, pompa obieg.) [W]", min_value=0, max_value=300, value=130, step=10)
 
 st.sidebar.header("🕐 Korekta czasu serwera")
 time_offset_hours = st.sidebar.slider(
