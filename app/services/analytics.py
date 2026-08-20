@@ -237,8 +237,9 @@ def analyze_inverter_performance(df: pd.DataFrame) -> InverterAnalysis:
     stability_score = max(0, min(100, 100 - (std_freq * 2.5)))
     
     # Efektywność modulacji: % czasu w optymalnym zakresie 30-60 Hz
-    optimal_mask = (freq >= 30) & (freq <= 60)
-    optimal_range_pct = (optimal_mask.sum() / len(freq)) * 100 if len(freq) > 0 else 0.0
+    # Obliczamy tylko dla czasu gdy sprężarka pracuje (powyżej 3 Hz)
+    optimal_mask = (freq_running >= 30) & (freq_running <= 60)
+    optimal_range_pct = (optimal_mask.sum() / len(freq_running)) * 100 if len(freq_running) > 0 else 0.0
     
     # Liczba startów ze stanu 0 lub bliskiego 0
     df_sorted = df.sort_values('czas')
