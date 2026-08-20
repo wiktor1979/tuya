@@ -510,7 +510,7 @@ def generate_recommendations(
 
 def estimate_annual_cost(
     daily_energy_kwh: float,
-    electricity_price_pln: float = 0.85  # zł/kWh
+    electricity_price_pln: float = 0.85  # zł/kWh - domyślna wartość, można zmienić w UI
 ) -> float:
     """Szacuje roczny koszt energii na podstawie dziennego zużycia."""
     return daily_energy_kwh * 365 * electricity_price_pln
@@ -519,7 +519,7 @@ def estimate_annual_cost(
 def generate_diagnostic_report(
     df: pd.DataFrame,
     weather_df: pd.DataFrame = None,
-    electricity_price: float = 0.85
+    electricity_price: float = 0.85  # zł/kWh - domyślna wartość, można zmienić w UI
 ) -> DiagnosticReport:
     """
     Generuje kompletny raport diagnostyczny z wszystkich analiz.
