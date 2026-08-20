@@ -129,6 +129,16 @@ time_offset_hours = st.sidebar.slider(
     help="Dodaje przesunięcie do czasu serwera, aby wyświetlać prawidłowy czas lokalny"
 )
 
+st.sidebar.header("💰 Cena energii elektrycznej")
+electricity_price = st.sidebar.number_input(
+    "Cena prądu [zł/kWh]",
+    min_value=0.0,
+    max_value=5.0,
+    value=0.85,
+    step=0.01,
+    help="Cena energii elektrycznej używana do obliczeń kosztów eksploatacji pompy ciepła"
+)
+
 def apply_time_correction(df: pd.DataFrame, offset_hours: int) -> pd.DataFrame:
     """Dodaje przesunięcie czasu do kolumny 'czas' w DataFrame."""
     if df is None or df.empty or 'czas' not in df.columns:
@@ -432,7 +442,7 @@ if not df_pivot.empty:
         diagnostic_report = generate_diagnostic_report(
             df=df_pivot,
             weather_df=weather_df,
-            electricity_price=0.80  # zł/kWh - można dodać do UI
+            electricity_price=electricity_price  # zł/kWh - pobrane z UI
         )
     except Exception as e:
         st.warning(f"Błąd generowania raportu diagnostycznego: {e}")
@@ -805,7 +815,7 @@ with tab_weather:
             st.subheader("📈 Korelacja COP z temperaturą zewnętrzną")
             
             if 'amb_temp' in df_pivot.columns and not df_pivot['amb_temp'].isna().all():
-                scatter_df = df_pivot[['czas', 'COP', 'amb_temp']].dropna().copy()
+                scatter_df = df_pivot[['czas', 'COP', 'amb_temp', 'P_el_kw']].dropna().copy()
                 
                 if not scatter_df.empty:
                     fig_scatter = px.scatter(
