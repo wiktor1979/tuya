@@ -658,7 +658,7 @@ with tab_diag:
                     )
                     fig_hist.add_vrect(x0=30, x1=60, fillcolor="green", opacity=0.15, 
                                        annotation_text="Zakres optymalny (30-60 Hz)", annotation_position="top")
-                    st.plotly_chart(fig_hist, use_container_width=True)
+                    st.plotly_chart(fig_hist, width="stretch")
             
             st.markdown("---")
             st.subheader("🔄 Analiza cykli krótkich")
@@ -675,7 +675,7 @@ with tab_diag:
                         "Strata energii [kWh]": f"{cycle.energy_wasted_kwh:.3f}"
                     })
                 cycles_df = pd.DataFrame(cycles_data)
-                st.dataframe(cycles_df, use_container_width=True, hide_index=True)
+                st.dataframe(cycles_df, width="stretch", hide_index=True)
             else:
                 st.success("✅ Nie wykryto cykli krótkich w analizowanym okresie.")
         
@@ -737,7 +737,7 @@ with tab_diag:
         daily_comp_stats["Liczba startów"] = daily_comp_stats["Liczba startów"].astype(int)
         
         # Wyświetlenie tabeli
-        st.dataframe(daily_comp_stats, width="stretch", hide_index=True, use_container_width=True)
+        st.dataframe(daily_comp_stats, width="stretch", hide_index=True)
         
         st.markdown("---")
         st.subheader("1️⃣ Odbiór ciepła przez instalację (Różnica temperatur ΔT)")
@@ -786,7 +786,7 @@ with tab_weather:
                     {"Zakres temp.": range_label.replace("_", " ").title(), "Śr. COP": cop}
                     for range_label, cop in weather.cop_at_temp_ranges.items()
                 ])
-                st.dataframe(ranges_df, use_container_width=True, hide_index=True)
+                st.dataframe(ranges_df, width="stretch", hide_index=True)
                 
                 # Wykres słupkowy COP vs temperature ranges
                 fig_cop_ranges = px.bar(
@@ -799,7 +799,7 @@ with tab_weather:
                     color_continuous_scale="RdYlGn"
                 )
                 fig_cop_ranges.update_layout(coloraxis_showscale=False)
-                st.plotly_chart(fig_cop_ranges, use_container_width=True)
+                st.plotly_chart(fig_cop_ranges, width="stretch")
             
             st.markdown("---")
             
@@ -846,7 +846,7 @@ with tab_weather:
                             line=dict(color='red', width=2, dash='dash')
                         ))
                     
-                    st.plotly_chart(fig_scatter, use_container_width=True)
+                    st.plotly_chart(fig_scatter, width="stretch")
             
             st.markdown("---")
             
@@ -900,7 +900,7 @@ with tab_weather:
                             legend=dict(x=0, y=1.1, orientation='h')
                         )
                         
-                        st.plotly_chart(fig_compare, use_container_width=True)
+                        st.plotly_chart(fig_compare, width="stretch")
                     else:
                         st.info("Brak danych pogodowych w wybranym zakresie czasu.")
                 else:
@@ -949,7 +949,7 @@ with tab_weather:
                         legend=dict(x=0, y=1.1, orientation='h')
                     )
                     
-                    st.plotly_chart(fig_dual, use_container_width=True)
+                    st.plotly_chart(fig_dual, width="stretch")
                 else:
                     st.info("Brak danych o temperaturze zewnętrznej w wybranym zakresie czasu.")
         
@@ -964,7 +964,7 @@ with tab_weather:
             weather_display = weather_df[['timestamp', 'temperature', 'humidity', 'pressure', 'wind_speed']].copy()
             weather_display['timestamp'] = pd.to_datetime(weather_display['timestamp'], unit='s').dt.strftime('%Y-%m-%d %H:%M')
             weather_display.columns = ['Czas', 'Temp. [°C]', 'Wilgotność [%]', 'Ciśnienie [hPa]', 'Wiatr [m/s]']
-            st.dataframe(weather_display.head(20), use_container_width=True, hide_index=True)
+            st.dataframe(weather_display.head(20), width="stretch", hide_index=True)
         else:
             st.info("Brak zapisanych danych pogodowych w bazie. Upewnij się że usługa pobierania pogody działa.")
 
@@ -994,7 +994,7 @@ with tab_meter:
                 key="input_meter_str"
             )
             
-            btn_add = st.form_submit_button("💾 Zapisz stan licznika", use_container_width=True)
+            btn_add = st.form_submit_button("💾 Zapisz stan licznika", width="stretch")
 
             if btn_add:
                 # Walidacja danych
@@ -1037,8 +1037,8 @@ with tab_meter:
                 edit_val = st.number_input("Popraw stan [kWh]", value=float(selected_rec["stan_kwh"]), step=0.1, format="%.2f")
 
                 col_e1, col_e2 = st.columns(2)
-                btn_update = col_e1.form_submit_button("💾 Zapisz zmiany", use_container_width=True)
-                btn_delete = col_e2.form_submit_button("🗑️ Usuń wpis", use_container_width=True)
+                btn_update = col_e1.form_submit_button("💾 Zapisz zmiany", width="stretch")
+                btn_delete = col_e2.form_submit_button("🗑️ Usuń wpis", width="stretch")
 
                 if btn_update:
                     edit_ts = int(datetime.combine(edit_date, edit_time).timestamp())
@@ -1080,7 +1080,7 @@ with tab_meter:
         table_view["Czas od poprz. [h]"] = table_view["Czas od poprz. [h]"].round(1)
         table_view["Śr. Moc w okresie [kW]"] = table_view["Śr. Moc w okresie [kW]"].round(2)
 
-        st.dataframe(table_view.sort_values("ID", ascending=False), use_container_width=True, hide_index=True)
+        st.dataframe(table_view.sort_values("ID", ascending=False), width="stretch", hide_index=True)
 
         # --- WYKRES DZIENNEGO ZUŻYCIA Z ESTYMACJĄ I PORÓWNANIEM Z POMPĄ ---
         st.markdown("---")
@@ -1166,19 +1166,19 @@ with tab_export:
             export_df = df.copy()
             filename = f"pompa_dane_surowe_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
             st.subheader("📊 Podgląd danych surowych")
-            st.dataframe(export_df.head(10), use_container_width=True)
+            st.dataframe(export_df.head(10), width="stretch")
             
         elif export_format == "Dane przetworzone (z obliczeniami)":
             export_df = df_pivot.copy()
             filename = f"pompa_dane_przetworzone_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
             st.subheader("📈 Podgląd danych przetworzonych")
-            st.dataframe(export_df.head(10), use_container_width=True)
+            st.dataframe(export_df.head(10), width="stretch")
             
         elif export_format == "Podsumowanie dzienne":
             export_df = daily_df.copy()
             filename = f"pompa_podsumowanie_dzienne_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
             st.subheader("📅 Podgląd podsumowania dziennego")
-            st.dataframe(export_df.head(10), use_container_width=True)
+            st.dataframe(export_df.head(10), width="stretch")
         
         # Generowanie CSV do pobrania
         csv_data = export_df.to_csv(index=False, decimal=';', sep=';').encode('utf-8')
@@ -1188,7 +1188,7 @@ with tab_export:
             data=csv_data,
             file_name=filename,
             mime="text/csv",
-            use_container_width=True
+            width="stretch"
         )
         
         st.info(f"📝 Plik będzie zawierał {len(export_df)} wierszy danych z zakresu: {hours_back} godzin")
