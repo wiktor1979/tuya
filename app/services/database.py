@@ -191,8 +191,39 @@ def save_properties_to_db(dev_id: str, properties: list, event_time: Optional[in
 def save_weather_data(timestamp: int, temperature: float, humidity: float, 
                       windspeed: float, precipitation: float, 
                       latitude: float, longitude: float) -> bool:
-    """Zapisuje dane pogodowe z API Open-Meteo do bazy danych."""
+    """Zapisuje dane pogodowe z API Open-Meteo do bazy danych.
+    
+    Zastosowano histerezę dla uniknięcia redundantnych wpisów:
+    - Temperatura: ±1°C
+    - Wilgotność: ±5%
+    - Ciśnienie: ±2 hPa (brak w danych)
+    - Wiatr: ±2 m/s
+    """
     with db_cursor() as cursor:
+        # Sprawdź ostatni zapisany rekord pogodowy
+        cursor.execute('''
+            SELECT temperature, humidity, windspeed, precipitation
+            FROM weather_data
+            ORDER BY timestamp DESC LIMIT 1
+        ''')
+        last_record = cursor.fetchone()
+        
+        if last_record:
+            last_temp, last_humidity, last_windspeed, last_precipitation = last_record
+            
+            # Sprawdź histerezę - jeśli zmiany są w zakresie tolerancji, pomiń zapis
+            temp_diff = abs(temperature - last_temp) if (last_temp is not None and temperature is not None) else float('inf')
+            humidity_diff = abs(humidity - last_humidity) if (last_humidity is not None and humidity is not None) else float('inf')
+            windspeed_diff = abs(windspeed - last_windspeed) if (last_windspeed is not None and windspeed is not None) else float('inf')
+            precip_diff = abs(precipitation - last_precipitation) if (last_precipitation is not None and precipitation is not None) else float('inf')
+            
+            # Jeśli wszystkie zmiany mieszczą się w histerezie, pomiń zapis
+            if (temp_diff <= 1.0 and 
+                humidity_diff <= 5.0 and 
+                windspeed_diff <= 2.0 and 
+                precip_diff <= 0.1):  # Dla opadów mała tolerancja
+                return False
+        
         cursor.execute('''
             INSERT INTO weather_data (timestamp, temperature, humidity, windspeed, precipitation, latitude, longitude)
             VALUES (?, ?, ?, ?, ?, ?, ?)
