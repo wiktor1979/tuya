@@ -207,7 +207,7 @@ def get_weather_data(days: int = 7) -> Optional[List[Tuple]]:
     
     with db_cursor() as cursor:
         cursor.execute('''
-            SELECT timestamp, temperature, humidity, windspeed, precipitation, latitude, longitude
+            SELECT id, timestamp, temperature, humidity, windspeed, precipitation, latitude, longitude
             FROM weather_data
             WHERE timestamp >= ?
             ORDER BY timestamp ASC

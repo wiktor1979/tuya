@@ -409,7 +409,19 @@ if not df_pivot.empty:
     try:
         weather_data = get_weather_data(days=30)
         if weather_data:
-            weather_df = pd.DataFrame(weather_data, columns=['id', 'timestamp', 'temperature', 'humidity', 'pressure', 'wind_speed', 'precipitation', 'cloud_cover', 'created_at'])
+            # Elastyczne tworzenie DataFrame - dopasowanie do faktycznej struktury danych z bazy (8 kolumn)
+            if len(weather_data) > 0 and len(weather_data[0]) >= 8:
+                # Struktura z bazy: id, timestamp, temperature, humidity, windspeed, precipitation, latitude, longitude
+                weather_df = pd.DataFrame(weather_data, columns=['id', 'timestamp', 'temperature', 'humidity', 'windspeed', 'precipitation', 'latitude', 'longitude'])
+                # Znormalizuj nazwy kolumn do oczekiwanego formatu
+                weather_df = weather_df.rename(columns={'windspeed': 'wind_speed'})
+                # Dodaj brakujące kolumny jeśli ich nie ma
+                if 'pressure' not in weather_df.columns:
+                    weather_df['pressure'] = 1013.0  # średnie ciśnienie
+                if 'cloud_cover' not in weather_df.columns:
+                    weather_df['cloud_cover'] = 0.0
+                if 'created_at' not in weather_df.columns:
+                    weather_df['created_at'] = None
     except Exception as e:
         st.warning(f"Nie udało się załadować danych pogodowych: {e}")
 
@@ -420,7 +432,7 @@ if not df_pivot.empty:
         diagnostic_report = generate_diagnostic_report(
             df=df_pivot,
             weather_df=weather_df,
-            electricity_price_kwh=0.80  # zł/kWh - można dodać do UI
+            electricity_price=0.80  # zł/kWh - można dodać do UI
         )
     except Exception as e:
         st.warning(f"Błąd generowania raportu diagnostycznego: {e}")
