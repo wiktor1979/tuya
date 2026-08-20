@@ -16,13 +16,12 @@ Aplikacja do monitorowania pompy ciepła z wykorzystaniem API Tuya Pulsar (EU) z
 │   │   ├── __init__.py
 │   │   ├── database.py           # Warstwa dostępu do bazy (z poolingiem, WAL, indeksami)
 │   │   ├── tuya_client.py        # Klient Tuya Pulsar z filtrem deadband
-│   │   ├── weather_service.py    # Integracja z Open-Meteo API
 │   │   ├── calculator.py         # Kalkulator COP/SCOP
 │   │   ├── exporter.py           # Eksport CSV
 │   │   └── analytics.py          # Zaawansowana diagnostyka i analiza
 │   └── ui/                       # Komponenty UI
 │       └── __init__.py
-├── main.py                       # Skrypt zbieracza danych
+├── main.py                       # Skrypt zbieracza danych (z wątkiem pogodowym)
 ├── dashboard.py                  # Dashboard Streamlit (6 zakładek)
 ├── db.py                         # Warstwa kompatybilności wstecznej
 ├── requirements.txt              # Zależności Python
@@ -40,12 +39,12 @@ Projekt został poddany refaktoryzacji zgodnie z zasadą pojedynczej odpowiedzia
 - **services/** - Logika biznesowa podzielona na niezależne moduły:
   - `database.py` - Operacje CRUD na SQLite z connection pooling, trybem WAL i optymalnymi indeksami
   - `tuya_client.py` - Komunikacja z Tuya Pulsar, deszyfrowanie AES-GCM/ECB, filtr deadband z `__slots__`
-  - `weather_service.py` - Pobieranie danych pogodowych z Open-Meteo (temperatura, opady, zachmurzenie)
   - `calculator.py` - Obliczenia wydajności (COP, SCOP, energia)
   - `exporter.py` - Eksport danych do CSV
   - `analytics.py` - Zaawansowana diagnostyka: wykrywanie cykli krótkich, analiza inwertera, szacowanie COP, korelacja pogodowa
 - **ui/** - Komponenty interfejsu użytkownika
 - **db.py** - Warstwa kompatybilności dla istniejących importów
+- **main.py** - Główny skrypt zbieracza z wątkiem pogodowym (Open-Meteo API)
 
 ### Optymalizacje wydajności
 
@@ -122,12 +121,12 @@ streamlit run dashboard.py --server.port 8501
 ```
 
 Dashboard zawiera 6 zakładek:
-1. **Podsumowanie** - Podstawowe metryki i status systemu
-2. **Wykresy** - Historia parametrów pracy pompy
-3. **Energia** - Bilans energetyczny i zużycie
-4. **Ręczne wpisy** - Zarządzanie ręcznymi odczytami licznika
-5. **Analiza Pogodowa** - Korelacja temperatury zewnętrznej z pracą pompy, wykresy zależności
-6. **Diagnostyka** - Zaawansowana analiza: cykle krótkie, praca inwertera, czasy trybów, rekomendacje
+1. **Panel Główny** - Podstawowe metryki i status systemu
+2. **Bilans Energetyczny & SCOP** - Bilans energetyczny i zużycie
+3. **Diagnostyka Pompy** - Zaawansowana analiza: cykle krótkie, praca inwertera, czasy trybów, rekomendacje
+4. **Kontekst Pogodowy** - Korelacja temperatury zewnętrznej z pracą pompy, wykresy zależności
+5. **Fizyczny Licznik Energii** - Zarządzanie ręcznymi odczytami licznika
+6. **Eksport Danych** - Eksport danych do CSV
 
 ### Docker
 ```bash
@@ -137,11 +136,34 @@ docker run -p 8501:8501 heat-pump-monitor
 
 ## Zmienne środowiskowe
 
-Wymagany plik `.env`:
+Wymagany plik `.env` (pojedyncze konto):
 ```
 TUYA_ACCESS_ID=twoj_access_id
 TUYA_ACCESS_KEY=twoj_access_key
-OPEN_METEO_ENABLED=true  # opcjonalnie, domyślnie true
+TUYA_DEVICE_IDS=bf874f7ae72aca1fc23op0  # opcjonalnie, lista ID urządzeń oddzielonych przecinkami
+```
+
+Alternatywnie dla wielu kont Tuya:
+```
+TUYA_ACCOUNTS_JSON=[
+  {
+    "access_id": "konto1_access_id",
+    "access_key": "konto1_access_key",
+    "devices": ["device_id_1", "device_id_2"]
+  },
+  {
+    "access_id": "konto2_access_id", 
+    "access_key": "konto2_access_key",
+    "devices": ["device_id_3"]
+  }
+]
+```
+
+Dodatkowe zmienne opcjonalne:
+```
+LATITUDE=51.7592  # Szerokość geograficzna dla danych pogodowych (domyślnie Łódź)
+LONGITUDE=19.4560  # Długość geograficzna dla danych pogodowych
+LOCATION_NAME="Łódź"  # Nazwa lokalizacji
 ```
 
 ## Funkcje
