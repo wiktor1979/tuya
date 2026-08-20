@@ -134,7 +134,7 @@ electricity_price = st.sidebar.number_input(
     "Cena prądu [zł/kWh]",
     min_value=0.0,
     max_value=5.0,
-    value=0.85,
+    value=1.00,
     step=0.01,
     help="Cena energii elektrycznej używana do obliczeń kosztów eksploatacji pompy ciepła"
 )
@@ -815,7 +815,7 @@ with tab_weather:
             st.subheader("📈 Korelacja COP z temperaturą zewnętrzną")
             
             if 'amb_temp' in df_pivot.columns and not df_pivot['amb_temp'].isna().all():
-                scatter_df = df_pivot[['czas', 'COP', 'amb_temp', 'P_el_kw']].dropna().copy()
+                scatter_df = df_pivot[['czas', 'COP', 'amb_temp', 'P_el_kw', 'Tryb']].dropna().copy()
                 
                 if not scatter_df.empty:
                     fig_scatter = px.scatter(
