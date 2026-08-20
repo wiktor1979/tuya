@@ -1,6 +1,6 @@
 # System Monitorowania Pompy Ciepła Tuya
 
-Aplikacja do monitorowania pompy ciepła z wykorzystaniem API Tuya Pulsar (EU).
+Aplikacja do monitorowania pompy ciepła z wykorzystaniem API Tuya Pulsar (EU) z zaawansowaną diagnostyką i integracją pogodową.
 
 ## Struktura projektu
 
@@ -14,14 +14,16 @@ Aplikacja do monitorowania pompy ciepła z wykorzystaniem API Tuya Pulsar (EU).
 │   │   └── telemetry.py          # Modele telemetryczne
 │   ├── services/                 # Usługi biznesowe
 │   │   ├── __init__.py
-│   │   ├── database.py           # Warstwa dostępu do bazy
-│   │   ├── tuya_client.py        # Klient Tuya Pulsar
+│   │   ├── database.py           # Warstwa dostępu do bazy (z poolingiem, WAL, indeksami)
+│   │   ├── tuya_client.py        # Klient Tuya Pulsar z filtrem deadband
+│   │   ├── weather_service.py    # Integracja z Open-Meteo API
 │   │   ├── calculator.py         # Kalkulator COP/SCOP
-│   │   └── exporter.py           # Eksport CSV
+│   │   ├── exporter.py           # Eksport CSV
+│   │   └── analytics.py          # Zaawansowana diagnostyka i analiza
 │   └── ui/                       # Komponenty UI
 │       └── __init__.py
 ├── main.py                       # Skrypt zbieracza danych
-├── dashboard.py                  # Dashboard Streamlit
+├── dashboard.py                  # Dashboard Streamlit (6 zakładek)
 ├── db.py                         # Warstwa kompatybilności wstecznej
 ├── requirements.txt              # Zależności Python
 ├── Dockerfile                    # Kontener Docker
@@ -36,12 +38,25 @@ Projekt został poddany refaktoryzacji zgodnie z zasadą pojedynczej odpowiedzia
 - **config.py** - Centralne miejsce na zmienne środowiskowe i stałe konfiguracji
 - **models/** - Definicje struktur danych (dataclasses)
 - **services/** - Logika biznesowa podzielona na niezależne moduły:
-  - `database.py` - Operacje CRUD na SQLite
-  - `tuya_client.py` - Komunikacja z Tuya Pulsar, deszyfrowanie AES
+  - `database.py` - Operacje CRUD na SQLite z connection pooling, trybem WAL i optymalnymi indeksami
+  - `tuya_client.py` - Komunikacja z Tuya Pulsar, deszyfrowanie AES-GCM/ECB, filtr deadband z `__slots__`
+  - `weather_service.py` - Pobieranie danych pogodowych z Open-Meteo (temperatura, opady, zachmurzenie)
   - `calculator.py` - Obliczenia wydajności (COP, SCOP, energia)
   - `exporter.py` - Eksport danych do CSV
-- **ui/** - Komponenty interfejsu użytkownika (w przygotowaniu)
+  - `analytics.py` - Zaawansowana diagnostyka: wykrywanie cykli krótkich, analiza inwertera, szacowanie COP, korelacja pogodowa
+- **ui/** - Komponenty interfejsu użytkownika
 - **db.py** - Warstwa kompatybilności dla istniejących importów
+
+### Optymalizacje wydajności
+
+- **Connection Pooling**: Thread-local storage połączeń SQLite
+- **Tryb WAL**: Lepsza współbieżność zapisu/odczytu
+- **Cache SQLite**: 64MB cache dla redukcji operacji dyskowych
+- **Indeksy**: 
+  - `idx_dev_code_time` - dla zapytań filtrowanych po urządzeniu i kodzie
+  - `idx_time_desc` - dla zapytań sortowanych malejąco po czasie
+- **Kontekst menedżer**: Automatyczne commit/zamykanie kursorów
+- **`__slots__`**: Redukcja zużycia pamięci o ~40-50% w filtrze deadband
 
 ## Instalacja
 
@@ -106,6 +121,14 @@ Aplikacja automatycznie wykryje liczbę skonfigurowanych kont i uruchomi odpowie
 streamlit run dashboard.py --server.port 8501
 ```
 
+Dashboard zawiera 6 zakładek:
+1. **Podsumowanie** - Podstawowe metryki i status systemu
+2. **Wykresy** - Historia parametrów pracy pompy
+3. **Energia** - Bilans energetyczny i zużycie
+4. **Ręczne wpisy** - Zarządzanie ręcznymi odczytami licznika
+5. **Analiza Pogodowa** - Korelacja temperatury zewnętrznej z pracą pompy, wykresy zależności
+6. **Diagnostyka** - Zaawansowana analiza: cykle krótkie, praca inwertera, czasy trybów, rekomendacje
+
 ### Docker
 ```bash
 docker build -t heat-pump-monitor .
@@ -114,24 +137,42 @@ docker run -p 8501:8501 heat-pump-monitor
 
 ## Zmienne środowiskowe
 
-Wymagane plik `.env`:
+Wymagany plik `.env`:
 ```
 TUYA_ACCESS_ID=twoj_access_id
 TUYA_ACCESS_KEY=twoj_access_key
+OPEN_METEO_ENABLED=true  # opcjonalnie, domyślnie true
 ```
 
 ## Funkcje
 
+### Podstawowe
 - ✅ Pobieranie telemetrii z Tuya Pulsar (EU)
 - ✅ Deszyfrowanie AES-GCM/ECB
-- ✅ Filtr Deadband (redukcja szumu)
-- ✅ Zapis do SQLite z indeksami
+- ✅ Filtr Deadband (redukcja szumu, zoptymalizowany z `__slots__`)
+- ✅ Zapis do SQLite z indeksami i connection poolingiem
 - ✅ Ręczne wpisy licznika energii
 - ✅ Obliczanie COP i SCOP (CO/CWU)
 - ✅ Bilans energetyczny [kWh]
 - ✅ Wykrywanie cykli defrost
 - ✅ Eksport danych do CSV
 - ✅ Dashboard Streamlit z wykresami Plotly
+
+### Zaawansowana Diagnostyka
+- 🔍 **Wykrywanie cykli krótkich** - Analiza częstotliwości startów pompy
+- 🔍 **Analiza pracy inwertera** - Ocena modulacji mocy i stabilności
+- 🔍 **Szacowanie COP** - Estymacja współczynnika wydajności na podstawie danych
+- 🔍 **Czasy trybów pracy** - Statystyki czasu pracy CO vs CWU
+- 🔍 **Korelacja pogodowa** - Zależność między temperaturą zewnętrzną a zużyciem energii
+- 🔍 **Automatyczne rekomendacje** - Sugestie optymalizacji pracy pompy
+- 🔍 **Szacowanie strat energii** - Identyfikacja nieefektywnych okresów pracy
+- 🔍 **Analiza efektywności modulacji** - Ocena pracy inwertera przy zmiennym obciążeniu
+
+### Integracja Pogodowa
+- 🌤️ **Open-Meteo API** - Automatyczne pobieranie danych co godzinę
+- 🌤️ **Dane historyczne** - Temperatura, opady, zachmurzenie, wiatr
+- 🌤️ **Kontekst dla analiz** - Powiązanie warunków pogodowych z pracą pompy
+- 🌤️ **Prognoza wpływu** - Jak temperatura zewnętrzna wpływa na COP
 
 ## Rozwój
 
@@ -141,3 +182,5 @@ Projekt jest przygotowany do dalszego rozwoju:
 - CI/CD (GitHub Actions)
 - Alerty (Telegram, e-mail)
 - Integracje smart home (Home Assistant)
+- Machine Learning do predykcji zużycia energii
+- Panel administracyjny do zarządzania wieloma instalacjami
