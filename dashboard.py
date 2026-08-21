@@ -1046,11 +1046,10 @@ with tab_meter:
                     except ValueError:
                         st.error("Wprowadzono niepoprawną wartość liczbową.")
 
-    # --- SEKCJA EDYCJI / USUWANIA ---
-    df_meter_all = load_manual_readings()
-
-    with col_form_edit:
-        st.subheader("✏️ Edytuj lub usuń wpis")
+    # --- SEKCJA EDYCJI / USUWANIA (ZWIJANA) ---
+    with st.expander("✏️ Edytuj lub usuń wpis", expanded=False):
+        df_meter_all = load_manual_readings()
+        
         if df_meter_all.empty:
             st.info("Brak wpisów w historii licznika do modyfikacji.")
         else:
@@ -1058,34 +1057,36 @@ with tab_meter:
                 f"[ID: {r['id']}] {r['czas']} -> {r['stan_kwh']:.2f} kWh": r 
                 for _, r in df_meter_all.sort_values("timestamp", ascending=False).iterrows()
             }
-            sel_label = st.selectbox("Wybierz wpis do edycji:", list(options_edit.keys()))
-            selected_rec = options_edit[sel_label]
+            sel_label = st.selectbox("Wybierz wpis do edycji:", list(options_edit.keys()), index=None, placeholder="Wybierz z listy...")
+            
+            if sel_label:
+                selected_rec = options_edit[sel_label]
 
-            with st.form("form_edit_manual_meter"):
-                rec_dt = pd.to_datetime(selected_rec["czas"])
-                edit_date = st.date_input("Popraw datę", value=rec_dt.date())
-                edit_time = st.time_input("Popraw godzinę", value=rec_dt.time())
-                edit_val = st.number_input("Popraw stan [kWh]", value=float(selected_rec["stan_kwh"]), step=0.1, format="%.2f")
+                with st.form("form_edit_manual_meter"):
+                    rec_dt = pd.to_datetime(selected_rec["czas"])
+                    edit_date = st.date_input("Popraw datę", value=rec_dt.date())
+                    edit_time = st.time_input("Popraw godzinę", value=rec_dt.time())
+                    edit_val = st.number_input("Popraw stan [kWh]", value=float(selected_rec["stan_kwh"]), step=0.1, format="%.2f")
 
-                col_e1, col_e2 = st.columns(2)
-                btn_update = col_e1.form_submit_button("💾 Zapisz zmiany", width="stretch")
-                btn_delete = col_e2.form_submit_button("🗑️ Usuń wpis", width="stretch")
+                    col_e1, col_e2 = st.columns(2)
+                    btn_update = col_e1.form_submit_button("💾 Zapisz zmiany", width="stretch")
+                    btn_delete = col_e2.form_submit_button("🗑️ Usuń wpis", width="stretch")
 
-                if btn_update:
-                    edit_ts = int(datetime.combine(edit_date, edit_time).timestamp())
-                    ok, msg = update_manual_energy_reading(int(selected_rec["id"]), edit_val, edit_ts)
-                    if ok:
-                        st.success(msg)
-                        st.rerun()
-                    else:
-                        st.error(msg)
+                    if btn_update:
+                        edit_ts = int(datetime.combine(edit_date, edit_time).timestamp())
+                        ok, msg = update_manual_energy_reading(int(selected_rec["id"]), edit_val, edit_ts)
+                        if ok:
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error(msg)
 
-                if btn_delete:
-                    if delete_manual_energy_reading(int(selected_rec["id"])):
-                        st.warning(f"Usunięto wpis ID: {selected_rec['id']}")
-                        st.rerun()
-                    else:
-                        st.error("Błąd podczas usuwania wpisu.")
+                    if btn_delete:
+                        if delete_manual_energy_reading(int(selected_rec["id"])):
+                            st.warning(f"Usunięto wpis ID: {selected_rec['id']}")
+                            st.rerun()
+                        else:
+                            st.error("Błąd podczas usuwania wpisu.")
 
     st.markdown("---")
 
