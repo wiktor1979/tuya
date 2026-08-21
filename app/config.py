@@ -62,7 +62,8 @@ THRESHOLDS = {
     "comp_freq": 1.0,
     "flow_rate": 1.0,
     "disc_temp": 0.5,
-    "back_temp": 0.5
+    "back_temp": 0.5,
+    "dc_fan1": 3.0
 }
 
 MAX_HEARTBEAT_SEC = 300  # Wymuś zapis co najmniej raz na 5 minut
