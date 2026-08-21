@@ -111,32 +111,31 @@ resample_map = {
 selected_resample = st.sidebar.selectbox("Agregacja punktów:", list(resample_map.keys()), index=1)
 resample_rule = resample_map[selected_resample]
 
-st.sidebar.header("⚙️ Kalkulator COP")
-cos_phi = st.sidebar.slider("Współczynnik mocy (cos φ)", 0.80, 1.00, 1.00, 0.01)
+# Sekcje zwinięte (domyślnie ukryte)
+with st.sidebar.expander("⚙️ Kalkulator COP i Kalibracja"):
+    cos_phi = st.slider("Współczynnik mocy (cos φ)", 0.80, 1.00, 1.00, 0.01)
+    st.subheader("🛠️ Kalibracja strat mocy")
+    standby_power_w = st.number_input("Pobór w spoczynku (elektronika) [W]", min_value=0, max_value=100, value=15, step=5)
+    active_power_w = st.number_input("Pobór pracy (wentylator, pompa obieg.) [W]", min_value=0, max_value=300, value=130, step=10)
 
-st.sidebar.header("🛠️ Kalibracja strat mocy")
-standby_power_w = st.sidebar.number_input("Pobór w spoczynku (elektronika) [W]", min_value=0, max_value=100, value=15, step=5)
-active_power_w = st.sidebar.number_input("Pobór pracy (wentylator, pompa obieg.) [W]", min_value=0, max_value=300, value=130, step=10)
-
-st.sidebar.header("🕐 Korekta czasu serwera")
-time_offset_hours = st.sidebar.slider(
-    "Przesunięcie czasu (godziny)",
-    min_value=-12,
-    max_value=12,
-    value=2,
-    step=1,
-    help="Dodaje przesunięcie do czasu serwera, aby wyświetlać prawidłowy czas lokalny"
-)
-
-st.sidebar.header("💰 Cena energii elektrycznej")
-electricity_price = st.sidebar.number_input(
-    "Cena prądu [zł/kWh]",
-    min_value=0.0,
-    max_value=5.0,
-    value=1.00,
-    step=0.01,
-    help="Cena energii elektrycznej używana do obliczeń kosztów eksploatacji pompy ciepła"
-)
+with st.sidebar.expander("🕐 Korekta czasu i Koszty"):
+    time_offset_hours = st.slider(
+        "Przesunięcie czasu (godziny)",
+        min_value=-12,
+        max_value=12,
+        value=2,
+        step=1,
+        help="Dodaje przesunięcie do czasu serwera, aby wyświetlać prawidłowy czas lokalny"
+    )
+    st.subheader("💰 Cena energii elektrycznej")
+    electricity_price = st.number_input(
+        "Cena prądu [zł/kWh]",
+        min_value=0.0,
+        max_value=5.0,
+        value=1.00,
+        step=0.01,
+        help="Cena energii elektrycznej używana do obliczeń kosztów eksploatacji pompy ciepła"
+    )
 
 def apply_time_correction(df: pd.DataFrame, offset_hours: int) -> pd.DataFrame:
     """Dodaje przesunięcie czasu do kolumny 'czas' w DataFrame."""
