@@ -146,7 +146,7 @@ def apply_time_correction(df: pd.DataFrame, offset_hours: int) -> pd.DataFrame:
     df_corrected['czas'] = pd.to_datetime(df_corrected['czas']) + pd.Timedelta(hours=offset_hours)
     return df_corrected
 
-def load_pump_data(hours: int, all_time: bool = False) -> pd.DataFrame:
+def load_pump_data(hours: int, all_time: bool = False, is_today: bool = False) -> pd.DataFrame:
     """Ładuje dane wyłącznie ze sterownika pompy ciepła."""
     conn = sqlite3.connect(DB_FILE)
     if all_time:
@@ -156,6 +156,17 @@ def load_pump_data(hours: int, all_time: bool = False) -> pd.DataFrame:
                 code, val_num, val_str
             FROM telemetry
             WHERE device_id = '{HEAT_PUMP_DEV_ID}'
+            ORDER BY timestamp ASC
+        """
+    elif is_today:
+        # Pobierz dane od 00:00 dzisiaj (czas lokalny)
+        query = f"""
+            SELECT 
+                datetime(timestamp, 'unixepoch', 'localtime') as czas,
+                code, val_num, val_str
+            FROM telemetry
+            WHERE device_id = '{HEAT_PUMP_DEV_ID}'
+              AND date(timestamp, 'unixepoch', 'localtime') = date('now', 'localtime')
             ORDER BY timestamp ASC
         """
     else:
@@ -195,7 +206,9 @@ def load_manual_readings() -> pd.DataFrame:
 if st.button("🔄 Odśwież dane"):
     st.rerun()
 
-df = load_pump_data(hours_back)
+# Sprawdź czy wybrano zakres "1 dzień" - wtedy pobierz dane od 00:00 do teraz
+is_today_range = (selected_range == "1 dzień")
+df = load_pump_data(hours_back, is_today=is_today_range)
 df_all_time = load_pump_data(hours_back, all_time=True)
 
 # --- PRZETWARZANIE TELEMETRII POMPY ---
@@ -416,7 +429,8 @@ else:
 weather_df = pd.DataFrame()
 if not df_pivot.empty:
     try:
-        weather_data = get_weather_data(days=30)
+        # Jeśli wybrano zakres "1 dzień", pobierz dane pogodowe tylko z dzisiaj
+        weather_data = get_weather_data(days=30, is_today=is_today_range)
         if weather_data:
             # Elastyczne tworzenie DataFrame - dopasowanie do faktycznej struktury danych z bazy (8 kolumn)
             if len(weather_data) > 0 and len(weather_data[0]) >= 8:

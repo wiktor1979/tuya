@@ -206,17 +206,26 @@ def save_weather_data(timestamp: int, temperature: float, humidity: float,
     return True
 
 
-def get_weather_data(days: int = 7) -> Optional[List[Tuple]]:
-    """Pobiera dane pogodowe z ostatnich dni."""
+def get_weather_data(days: int = 7, is_today: bool = False) -> Optional[List[Tuple]]:
+    """Pobiera dane pogodowe z ostatnich dni lub od 00:00 dzisiaj."""
     import time
-    cutoff_time = int(time.time()) - (days * 24 * 60 * 60)
     
     with db_cursor() as cursor:
-        cursor.execute('''
-            SELECT id, timestamp, temperature, humidity, windspeed, precipitation, latitude, longitude
-            FROM weather_data
-            WHERE timestamp >= ?
-            ORDER BY timestamp ASC
-        ''', (cutoff_time,))
+        if is_today:
+            # Pobierz dane od 00:00 dzisiaj (czas lokalny)
+            cursor.execute('''
+                SELECT id, timestamp, temperature, humidity, windspeed, precipitation, latitude, longitude
+                FROM weather_data
+                WHERE date(timestamp, 'unixepoch', 'localtime') = date('now', 'localtime')
+                ORDER BY timestamp ASC
+            ''')
+        else:
+            cutoff_time = int(time.time()) - (days * 24 * 60 * 60)
+            cursor.execute('''
+                SELECT id, timestamp, temperature, humidity, windspeed, precipitation, latitude, longitude
+                FROM weather_data
+                WHERE timestamp >= ?
+                ORDER BY timestamp ASC
+            ''', (cutoff_time,))
         data = cursor.fetchall()
     return data
