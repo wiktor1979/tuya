@@ -857,6 +857,8 @@ with tab_weather:
                 # Przygotowanie danych do wykresu
                 weather_df_copy = weather_df.copy()
                 weather_df_copy['timestamp'] = pd.to_datetime(weather_df_copy['timestamp'], unit='s')
+                # Zastosowanie tej samej korekty czasu jak dla danych z pompy ciepła
+                weather_df_copy['timestamp'] = weather_df_copy['timestamp'] + pd.Timedelta(hours=time_offset_hours)
                 
                 # Filtrowanie do zakresu czasowego df_pivot
                 if not df_pivot.empty and 'czas' in df_pivot.columns:
@@ -962,7 +964,10 @@ with tab_weather:
         
         if not weather_df.empty:
             weather_display = weather_df[['timestamp', 'temperature', 'humidity', 'pressure', 'wind_speed']].copy()
-            weather_display['timestamp'] = pd.to_datetime(weather_display['timestamp'], unit='s').dt.strftime('%Y-%m-%d %H:%M')
+            weather_display['timestamp'] = pd.to_datetime(weather_display['timestamp'], unit='s')
+            # Zastosowanie tej samej korekty czasu jak dla danych z pompy ciepła
+            weather_display['timestamp'] = weather_display['timestamp'] + pd.Timedelta(hours=time_offset_hours)
+            weather_display['timestamp'] = weather_display['timestamp'].dt.strftime('%Y-%m-%d %H:%M')
             weather_display.columns = ['Czas', 'Temp. [°C]', 'Wilgotność [%]', 'Ciśnienie [hPa]', 'Wiatr [m/s]']
             st.dataframe(weather_display.head(20), width="stretch", hide_index=True)
         else:
