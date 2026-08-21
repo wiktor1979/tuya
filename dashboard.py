@@ -977,13 +977,26 @@ with tab_weather:
         st.subheader("📋 Ostatnie dane pogodowe z bazy")
         
         if not weather_df.empty:
-            weather_display = weather_df[['timestamp', 'temperature', 'humidity', 'pressure', 'wind_speed']].copy()
-            weather_display['timestamp'] = pd.to_datetime(weather_display['timestamp'], unit='s')
-            # Zastosowanie tej samej korekty czasu jak dla danych z pompy ciepła
-            weather_display['timestamp'] = weather_display['timestamp'] + pd.Timedelta(hours=time_offset_hours)
-            weather_display['timestamp'] = weather_display['timestamp'].dt.strftime('%Y-%m-%d %H:%M')
-            weather_display.columns = ['Czas', 'Temp. [°C]', 'Wilgotność [%]', 'Ciśnienie [hPa]', 'Wiatr [m/s]']
-            st.dataframe(weather_display.head(20), width="stretch", hide_index=True)
+            # Obliczanie początku bieżącego dnia kalendarzowego z uwzględnieniem przesunięcia czasowego
+            now_local = datetime.now() + timedelta(hours=time_offset_hours)
+            start_of_day_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            # Konwersja z powrotem na czas serwerowy dla filtrowania
+            start_query_time = start_of_day_local - timedelta(hours=time_offset_hours)
+            
+            # Filtrowanie danych tylko z bieżącego dnia (po korekcie czasu)
+            weather_today = weather_df[weather_df['timestamp'] >= start_query_time.timestamp()].copy()
+            
+            if not weather_today.empty:
+                weather_display = weather_today[['timestamp', 'temperature', 'humidity', 'pressure', 'wind_speed']].copy()
+                weather_display['timestamp'] = pd.to_datetime(weather_display['timestamp'], unit='s')
+                # Zastosowanie tej samej korekty czasu jak dla danych z pompy ciepła
+                weather_display['timestamp'] = weather_display['timestamp'] + pd.Timedelta(hours=time_offset_hours)
+                weather_display['timestamp'] = weather_display['timestamp'].dt.strftime('%Y-%m-%d %H:%M')
+                weather_display.columns = ['Czas', 'Temp. [°C]', 'Wilgotność [%]', 'Ciśnienie [hPa]', 'Wiatr [m/s]']
+                st.dataframe(weather_display.head(20), width="stretch", hide_index=True)
+            else:
+                st.info("Brak danych pogodowych w wybranym zakresie (dzisiejszy dzień).")
         else:
             st.info("Brak zapisanych danych pogodowych w bazie. Upewnij się że usługa pobierania pogody działa.")
 
