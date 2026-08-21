@@ -3,6 +3,11 @@
 *.pyc
 __pycache__/
 
+# Dependencies
+.venv/
+venv/
+node_modules/
+
 # Logs and temp files
 *.log
 *.tmp
@@ -18,35 +23,20 @@ __pycache__/
 .idea/
 
 # Coverage reports
+.coverage
 coverage/
 htmlcov/
-.coverage
 
-# Python specific
-*.pyo
-*.pyd
-.Python
-*.so
-*.egg-info/
-.eggs/
-
-# Distribution / packaging
-.dist-info/
-.installed.cfg
-*.egg
-
-# IDE specific
-*.swp
-*.swo
-*~
-.DS_Store
-Thumbs.db
-
-# MyPy cache
+# Python cache
 .mypy_cache/
-# PyTest cache
 .pytest_cache/
 
-# Original rules preserved
-*.log
+# Build directories
+dist/
+build/
+target/
+
+# OS generated files
+.DS_Store
+Thumbs.db
 ```
