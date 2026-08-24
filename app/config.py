@@ -73,6 +73,34 @@ HISTERESIS_CONFIG = {
     "dc_fan1":        {"active": 3.0, "idle": 3.0, "last_value": None},
 }
 
+HISTERESIS_CONFIG = {
+    # Temperatury hydrauliczne
+    "out_water_temp": {"active": 0.2, "idle": 0.5, "last_value": None},
+    "in_water_temp":  {"active": 0.2, "idle": 0.5, "last_value": None},
+    "tank_temp":      {"active": 0.3, "idle": 0.5, "last_value": None},
+
+    # Temperatury otoczenia i wewnętrzne
+    "amb_temp":       {"active": 0.5, "idle": 0.5, "last_value": None},
+    "tidr":           {"active": 0.5, "idle": 0.5, "last_value": None},  # Dodano: redukuje szum o ~97%
+
+    # Temperatury układu chłodniczego
+    "disc_temp":      {"active": 0.5, "idle": 1.5, "last_value": None},  # W idle powolny dryf do temp. otoczenia
+    "back_temp":      {"active": 0.5, "idle": 1.5, "last_value": None},
+
+    # Energia i zasilanie
+    "ac_curr":        {"active": 1.0, "idle": 0.1, "last_value": None},  # Skala x10 (2.0 = krok 0.2A)
+    "ac_vol":         {"active": 3.0, "idle": 5.0, "last_value": None},
+
+    # Praca układu mechanicznego
+    "comp_freq":      {"active": 2.0, "idle": 1.0, "last_value": None},  # Krok modulacji sprężarki
+    "flow_rate":      {"active": 1.0, "idle": 2.0, "last_value": None},
+    "dc_fan1":        {"active": 15.0, "idle": 50.0, "last_value": None}, # Rzeczywisty zakres 0-840 RPM
+
+    # Elektroniczne zawory rozprężne (EEV)
+    "m_eev":          {"active": 5.0, "idle": 20.0, "last_value": None}, # Dodano: kroki zaworu głównego
+    "a_eev":          {"active": 5.0, "idle": 20.0, "last_value": None}, # Dodano: kroki zaworu pomocniczego
+}
+
 MAX_HEARTBEAT_SEC = 300  # Wymuś zapis co najmniej raz na 5 minut
 
 # Konfiguracja lokalizacji dla danych pogodowych (Open-Meteo)
