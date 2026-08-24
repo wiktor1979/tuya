@@ -1,41 +1,40 @@
 ```
-# Compiled and build artifacts
+# Compiled Python files
 *.pyc
 __pycache__/
 
-# Dependencies
-.venv/
+# Virtual environments
 venv/
-
-# Logs and temp files
-*.log
-*.tmp
-*.swp
-
-# Environment
+.venv/
 .env
 .env.local
 *.env.*
 
-# Editors
+# Logs
+*.log
+
+# IDE files
 .vscode/
 .idea/
+*.swp
+*.swo
 
-# Coverage
+# Build/dist folders
+build/
+dist/
+target/
+
+# Coverage reports
 .coverage
 coverage/
 htmlcov/
 
-# Python specific
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.so
-*.egg-info/
-.eggs/
+# Dependency cache
+.mypy_cache/
+.pytest_cache/
+node_modules/
 
-# OS generated files
+# System files
 .DS_Store
 Thumbs.db
 ```
