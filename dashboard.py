@@ -25,6 +25,31 @@ from app.services.database import get_db_connection, get_weather_data
 # --- KONFIGURACJA STRONY ---
 st.set_page_config(page_title="Monitor Pompy Ciepła", layout="wide", page_icon="🔥")
 
+# --- AUTO-ODŚWIEŻANIE STRONY ---
+# Pobierz status pompy, aby dostosować częstotliwość odświeżania
+def get_pump_status_for_refresh():
+    try:
+        query = "SELECT compressor_status FROM telemetry ORDER BY timestamp DESC LIMIT 1"
+        df = pd.read_sql_query(query, sqlite3.connect(DB_FILE))
+        if not df.empty and df['compressor_status'].iloc[0]:
+            return True  # Pompa pracuje
+        return False  # Pompa nie pracuje
+    except:
+        return False
+
+pump_running = get_pump_status_for_refresh()
+refresh_interval = 60 if pump_running else 180  # 60s gdy pracuje, 180s gdy nie
+
+st.markdown(f"""
+<meta http-equiv="refresh" content="{refresh_interval}">
+<script>
+    // Dodatkowe odświeżanie przez JS dla pewności
+    setTimeout(function() {{
+        location.reload();
+    }}, {refresh_interval * 1000});
+</script>
+""", unsafe_allow_html=True)
+
 st.markdown("""
 <style>
 /* Wygląd kafelków metryk */
@@ -589,6 +614,10 @@ with tab_scop:
         daily_display_all["Ciepło Łącznie [kWh]"] = daily_display_all["Ciepło Łącznie [kWh]"].round(2)
         daily_display_all["SCOP Dzienny"] = daily_display_all["SCOP Dzienny"].round(2)
         daily_display_all["Cykle Sprężarki"] = daily_display_all["Cykle Sprężarki"].astype(int)
+        
+        # Sortowanie malejąco po dacie (najnowsze na górze)
+        daily_display_all = daily_display_all.sort_values(by="Data", ascending=False)
+        
         st.dataframe(daily_display_all, width="stretch", hide_index=True)
 
 # --- ZAKŁADKA 3: DIAGNOSTYKA ---
