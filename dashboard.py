@@ -614,6 +614,10 @@ with tab_scop:
         daily_display_all["Ciepło Łącznie [kWh]"] = daily_display_all["Ciepło Łącznie [kWh]"].round(2)
         daily_display_all["SCOP Dzienny"] = daily_display_all["SCOP Dzienny"].round(2)
         daily_display_all["Cykle Sprężarki"] = daily_display_all["Cykle Sprężarki"].astype(int)
+        
+        # Sortowanie malejąco po dacie (najnowsze na górze)
+        daily_display_all = daily_display_all.sort_values(by="Data", ascending=False)
+        
         st.dataframe(daily_display_all, width="stretch", hide_index=True)
 
 # --- ZAKŁADKA 3: DIAGNOSTYKA ---

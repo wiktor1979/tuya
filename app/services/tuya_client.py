@@ -9,7 +9,7 @@ import pulsar
 
 from app.config import (
     TUYA_ACCOUNTS, PULSAR_SERVER_EU, 
-    MQ_ENV_PROD, TEMP_CODES, THRESHOLDS, MAX_HEARTBEAT_SEC
+    MQ_ENV_PROD, TEMP_CODES, HISTERESIS_CONFIG, MAX_HEARTBEAT_SEC
 )
 
 
@@ -19,7 +19,7 @@ def get_tuya_accounts() -> List[Dict[str, any]]:
 
 
 class DeadbandFilter:
-    """Filtr deadband dla telemetrii - zoptymalizowana wersja."""
+    """Filtr deadband dla telemetrii - obsługa dynamicznej histerezy."""
     
     __slots__ = ['last_saved_val', 'last_saved_time']
     
@@ -27,8 +27,16 @@ class DeadbandFilter:
         self.last_saved_val: Dict[str, Any] = {}
         self.last_saved_time: Dict[str, float] = {}
     
-    def should_save(self, code: str, new_val: Any) -> bool:
-        """Decyduje, czy dana wartość parametru powinna zostać zapisana do bazy."""
+    def should_save(self, code: str, new_val: Any, compressor_status: int = 0) -> bool:
+        """
+        Decyduje, czy dana wartość parametru powinna zostać zapisana do bazy.
+        Używa dynamicznej histerezy zależnej od statusu sprężarki.
+        
+        Args:
+            code: Nazwa parametru (kod z Tuya).
+            new_val: Nowa odczytana wartość.
+            compressor_status: Status sprężarki (0 = idle, >0 = active).
+        """
         now = time.time()
         
         # 1. Pierwszy odczyt w historii -> zapisz
@@ -52,7 +60,15 @@ class DeadbandFilter:
         # 4. Sprawdzanie progu dla rzeczywistych liczb (z wykluczeniem booleanów!)
         if isinstance(new_val, (int, float)) and not isinstance(new_val, bool):
             if isinstance(old_val, (int, float)) and not isinstance(old_val, bool):
-                threshold = THRESHOLDS.get(code, 0.0)
+                # Pobierz konfigurację histerezy dla tego parametru
+                config_entry = HISTERESIS_CONFIG.get(code)
+                
+                if config_entry:
+                    # Wybierz próg w zależności od statusu sprężarki
+                    threshold = config_entry['active'] if compressor_status > 0 else config_entry['idle']
+                else:
+                    # Fallback dla parametrów spoza konfiguracji
+                    threshold = 0.0
                 
                 # Jeśli różnica jest mniejsza niż próg -> IGNORUJ
                 if abs(new_val - old_val) < threshold:
@@ -186,6 +202,15 @@ class TuyaPulsarClient:
                 return  # Ignoruj urządzenia spoza listy monitorowanych
 
             if dev_id and status_list:
+                # Pobierz status sprężarki z tej samej wiadomości, jeśli dostępny
+                compressor_status = 0
+                for item in status_list:
+                    if item.get("code") == "comp_freq":
+                        c_val = item.get("value", 0)
+                        if isinstance(c_val, (int, float)) and c_val > 0:
+                            compressor_status = 1
+                        break
+                
                 filtered_status_list = []
 
                 for item in status_list:
@@ -197,7 +222,7 @@ class TuyaPulsarClient:
                     if code in TEMP_CODES and isinstance(val, (int, float)) and not isinstance(val, bool):
                         check_val = val / 10.0
 
-                    if self.filter.should_save(code, check_val):
+                    if self.filter.should_save(code, check_val, compressor_status):
                         filtered_status_list.append(item)
 
                 if filtered_status_list:
