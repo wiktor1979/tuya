@@ -54,24 +54,6 @@ TEMP_CODES = {
 # Konfiguracja histerezy dynamicznej
 # Format: 'nazwa_parametru': { 'active': próg_gdy_pompa_pracuje, 'idle': próg_gdy_pompa_stoi, 'last_value': None }
 # Wartości 'active' i 'idle' są obecnie identyczne, zachowując dotychczasową logikę zapisu.
-HISTERESIS_CONFIG = {
-    # Temperatury
-    "out_water_temp": {"active": 0.2, "idle": 0.2, "last_value": None},
-    "in_water_temp":  {"active": 0.2, "idle": 0.2, "last_value": None},
-    "tank_temp":      {"active": 0.3, "idle": 0.3, "last_value": None},
-    "amb_temp":       {"active": 0.5, "idle": 0.5, "last_value": None},
-    "disc_temp":      {"active": 0.5, "idle": 0.5, "last_value": None},
-    "back_temp":      {"active": 0.5, "idle": 0.5, "last_value": None},
-
-    # Energia i prąd
-    "ac_curr":        {"active": 0.1, "idle": 0.1, "last_value": None},
-    "ac_vol":         {"active": 3.0, "idle": 3.0, "last_value": None},
-
-    # Praca urządzenia
-    "comp_freq":      {"active": 1.0, "idle": 1.0, "last_value": None},
-    "flow_rate":      {"active": 1.0, "idle": 1.0, "last_value": None},
-    "dc_fan1":        {"active": 3.0, "idle": 3.0, "last_value": None},
-}
 
 HISTERESIS_CONFIG = {
     # Temperatury hydrauliczne
@@ -95,7 +77,8 @@ HISTERESIS_CONFIG = {
     "comp_freq":      {"active": 2.0, "idle": 1.0, "last_value": None},  # Krok modulacji sprężarki
     "flow_rate":      {"active": 1.0, "idle": 2.0, "last_value": None},
     "dc_fan1":        {"active": 15.0, "idle": 50.0, "last_value": None}, # Rzeczywisty zakres 0-840 RPM
-
+    "dc_fan2":        {"active": 50.0, "idle": 50.0, "last_value": None}, # Rzeczywisty zakres 0-840 RPM
+    
     # Elektroniczne zawory rozprężne (EEV)
     "m_eev":          {"active": 5.0, "idle": 20.0, "last_value": None}, # Dodano: kroki zaworu głównego
     "a_eev":          {"active": 5.0, "idle": 20.0, "last_value": None}, # Dodano: kroki zaworu pomocniczego
