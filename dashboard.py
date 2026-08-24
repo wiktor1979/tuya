@@ -580,14 +580,15 @@ with tab_scop:
 
         st.markdown("---")
         st.subheader("📅 Dzienny Bilans Zużycia, Temperatur i Defrostów (wszystkie dane)")
-        daily_display_all = daily_df_all[["dzień", "amb_temp", "E_el_co_row", "E_el_cwu_row", "E_el_total", "E_th_total", "SCOP_dzienny", "defrost_start"]].copy()
-        daily_display_all.columns = ["Data", "Śr. Temp Zewn. [°C]", "Prąd CO [kWh]", "Prąd CWU [kWh]", "Prąd Łącznie [kWh]", "Ciepło Łącznie [kWh]", "SCOP Dzienny", "Liczba Defrostów"]
+        daily_display_all = daily_df_all[["dzień", "amb_temp", "E_el_co_row", "E_el_cwu_row", "E_el_total", "E_th_total", "SCOP_dzienny", "defrost_start", "comp_start"]].copy()
+        daily_display_all.columns = ["Data", "Śr. Temp Zewn. [°C]", "Prąd CO [kWh]", "Prąd CWU [kWh]", "Prąd Łącznie [kWh]", "Ciepło Łącznie [kWh]", "SCOP Dzienny", "Liczba Defrostów", "Cykle Sprężarki"]
         daily_display_all["Śr. Temp Zewn. [°C]"] = daily_display_all["Śr. Temp Zewn. [°C]"].round(1)
         daily_display_all["Prąd CO [kWh]"] = daily_display_all["Prąd CO [kWh]"].round(2)
         daily_display_all["Prąd CWU [kWh]"] = daily_display_all["Prąd CWU [kWh]"].round(2)
         daily_display_all["Prąd Łącznie [kWh]"] = daily_display_all["Prąd Łącznie [kWh]"].round(2)
         daily_display_all["Ciepło Łącznie [kWh]"] = daily_display_all["Ciepło Łącznie [kWh]"].round(2)
         daily_display_all["SCOP Dzienny"] = daily_display_all["SCOP Dzienny"].round(2)
+        daily_display_all["Cykle Sprężarki"] = daily_display_all["Cykle Sprężarki"].astype(int)
         st.dataframe(daily_display_all, width="stretch", hide_index=True)
 
 # --- ZAKŁADKA 3: DIAGNOSTYKA ---
