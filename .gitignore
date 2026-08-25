@@ -1,40 +1,57 @@
 ```
-# Compiled Python files
-*.pyc
+# Python
 __pycache__/
-
-# Virtual environments
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
 venv/
 .venv/
+.ENV
 .env
 .env.local
-*.env.*
-
-# Logs
+.env.*
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
 *.log
+.git/modules/
+*.sublime-project
+*.sublime-workspace
+.pytest_cache/
+.mypy_cache/
+.hypothesis/
 
-# IDE files
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDEs
 .vscode/
 .idea/
-*.swp
-*.swo
 
-# Build/dist folders
-build/
-dist/
-target/
-
-# Coverage reports
-.coverage
-coverage/
-htmlcov/
-
-# Dependency cache
-.mypy_cache/
-.pytest_cache/
-node_modules/
-
-# System files
+# OS
 .DS_Store
 Thumbs.db
 ```
