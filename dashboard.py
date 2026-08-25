@@ -38,17 +38,11 @@ def get_pump_status_for_refresh():
         return False
 
 pump_running = get_pump_status_for_refresh()
-refresh_interval = 60 if pump_running else 180  # 60s gdy pracuje, 180s gdy nie
+refresh_interval = 60000 if pump_running else 300000  # 60s (1min) gdy pracuje, 300s (5min) gdy nie
 
-st.markdown(f"""
-<meta http-equiv="refresh" content="{refresh_interval}">
-<script>
-    // Dodatkowe odświeżanie przez JS dla pewności
-    setTimeout(function() {{
-        location.reload();
-    }}, {refresh_interval * 1000});
-</script>
-""", unsafe_allow_html=True)
+# Użycie streamlit-autorefresh do odświeżania w tle bez przeładowania strony
+from streamlit_autorefresh import st_autorefresh
+count = st_autorefresh(interval=refresh_interval, limit=None, key="frefresher")
 
 st.markdown("""
 <style>
