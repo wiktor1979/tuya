@@ -1,18 +1,9 @@
-import os
-import sys
 import time
 import threading
-from dotenv import load_dotenv
-
-# Dodanie ścieżki do modułów app
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app.services.tuya_client import TuyaPulsarClient, MultiAccountTuyaClient, get_tuya_accounts
 from app.services.database import init_db, save_properties_to_db, save_weather_data
 from app.config import LATITUDE, LONGITUDE, LOCATION_NAME
-
-# Wczytanie zmiennych środowiskowych z pliku .env
-load_dotenv()
 
 
 def fetch_weather_loop():

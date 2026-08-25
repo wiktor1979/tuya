@@ -31,16 +31,17 @@ st.set_page_config(page_title="Monitor Pompy Ciepła", layout="wide", page_icon=
 # Pobierz status pompy, aby dostosować częstotliwość odświeżania
 def get_pump_status_for_refresh():
     try:
-        query = "SELECT compressor_status FROM telemetry ORDER BY timestamp DESC LIMIT 1"
-        df = pd.read_sql_query(query, sqlite3.connect(DB_FILE))
-        if not df.empty and df['compressor_status'].iloc[0]:
+        conn = sqlite3.connect(DB_FILE)
+        query = "SELECT val_num FROM telemetry WHERE device_id = ? AND code = 'comp_freq' ORDER BY timestamp DESC LIMIT 1"
+        df = pd.read_sql_query(query, conn, params=(HEAT_PUMP_DEV_ID,))
+        conn.close()
+        if not df.empty and df['val_num'].iloc[0] and df['val_num'].iloc[0] > 0:
             return True  # Pompa pracuje
         return False  # Pompa nie pracuje
-    except:
+    except Exception:
         return False
 
 pump_running = get_pump_status_for_refresh()
-refresh_interval = 60000 if pump_running else 300000  # 60s (1min) gdy pracuje, 300s (5min) gdy nie
 
 st.markdown("""
 <style>
@@ -166,52 +167,54 @@ def load_pump_data(hours: int, all_time: bool = False, is_today: bool = False) -
     """Ładuje dane wyłącznie ze sterownika pompy ciepła."""
     conn = sqlite3.connect(DB_FILE)
     if all_time:
-        query = f"""
+        query = """
             SELECT 
                 datetime(timestamp, 'unixepoch', 'localtime') as czas,
                 code, val_num, val_str
             FROM telemetry
-            WHERE device_id = '{HEAT_PUMP_DEV_ID}'
+            WHERE device_id = ?
             ORDER BY timestamp ASC
         """
+        df_data = pd.read_sql_query(query, conn, params=(HEAT_PUMP_DEV_ID,))
     elif is_today:
-        query = f"""
+        query = """
             SELECT 
                 datetime(timestamp, 'unixepoch', 'localtime') as czas,
                 code, val_num, val_str
             FROM telemetry
-            WHERE device_id = '{HEAT_PUMP_DEV_ID}'
+            WHERE device_id = ?
               AND date(timestamp, 'unixepoch', 'localtime') = date('now', 'localtime')
             ORDER BY timestamp ASC
         """
+        df_data = pd.read_sql_query(query, conn, params=(HEAT_PUMP_DEV_ID,))
     else:
-        query = f"""
+        query = """
             SELECT 
                 datetime(timestamp, 'unixepoch', 'localtime') as czas,
                 code, val_num, val_str
             FROM telemetry
-            WHERE device_id = '{HEAT_PUMP_DEV_ID}'
-              AND timestamp >= strftime('%s', 'now', '-{hours} hours')
+            WHERE device_id = ?
+              AND timestamp >= strftime('%s', 'now', ? || ' hours')
             ORDER BY timestamp ASC
         """
-    df_data = pd.read_sql_query(query, conn)
+        df_data = pd.read_sql_query(query, conn, params=(HEAT_PUMP_DEV_ID, f"-{hours}"))
     conn.close()
     return df_data
 
 def load_manual_readings() -> pd.DataFrame:
     """Ładuje całą historię odczytów z licznika ręcznego."""
     conn = sqlite3.connect(DB_FILE)
-    query = f"""
+    query = """
         SELECT 
             id,
             timestamp,
             datetime(timestamp, 'unixepoch', 'localtime') as czas,
             val_num as stan_kwh
         FROM telemetry
-        WHERE device_id = '{MANUAL_METER_DEV_ID}' AND code = 'energy_kwh'
+        WHERE device_id = ? AND code = 'energy_kwh'
         ORDER BY timestamp ASC
     """
-    df_man = pd.read_sql_query(query, conn)
+    df_man = pd.read_sql_query(query, conn, params=(MANUAL_METER_DEV_ID,))
     conn.close()
     if not df_man.empty and 'czas' in df_man.columns:
         df_man["czas"] = pd.to_datetime(df_man["czas"])
@@ -223,13 +226,21 @@ if st.button("🔄 Odśwież dane"):
     st.rerun()
 
 # --- LICZNIK I AUTO-ODŚWIEŻANIE ---
-interval_sec = 60 if pump_running else 300
+# Stabilizacja interwału przez session_state — zapobiega ciągłemu przeskakiwaniu klucza
+if "last_pump_running" not in st.session_state:
+    st.session_state["last_pump_running"] = pump_running
+
+# Aktualizuj stan tylko jeśli się zmienił (zapobiega pętli rerun)
+if st.session_state["last_pump_running"] != pump_running:
+    st.session_state["last_pump_running"] = pump_running
+
+interval_sec = 60 if st.session_state["last_pump_running"] else 300
 interval_ms = interval_sec * 1000
 
-# Wywołujemy st_autorefresh z dynamicznym kluczem zależnym od interwału
-count = st_autorefresh(interval=interval_ms, limit=None, key=f"frefresher_{interval_sec}")
+# st_autorefresh — klucz zależny od interwału, żeby wymusić restart timera przy zmianie
+count = st_autorefresh(interval=interval_ms, limit=None, key=f"refresher_{interval_sec}")
 
-# Komponent odliczający czas w przeglądarce za pomocą izolowanego iframe
+# Komponent odliczający czas w przeglądarce — synchronizowany z interwałem autorefresh
 components.html(
     f"""
     <!DOCTYPE html>
@@ -254,23 +265,30 @@ components.html(
                 font-weight: bold;
                 color: #4CAF50;
             }}
+            .timer-status {{
+                font-size: 0.75em;
+                margin-left: 8px;
+                color: {'\"#4CAF50\"' if pump_running else '\"#888\"'};
+            }}
         </style>
     </head>
     <body>
         <div class="timer-container">
             Następne odświeżenie za: <span id="countdown" class="timer-val">{interval_sec}</span> s
+            <span class="timer-status">({'Pompa pracuje — odświeżanie co 1 min' if pump_running else 'Pompa stoi — odświeżanie co 5 min'})</span>
         </div>
 
         <script>
             (function() {{
-                let timeLeft = {interval_sec};
+                const INTERVAL = {interval_sec};
+                let timeLeft = INTERVAL;
                 const display = document.getElementById('countdown');
                 
-                const interval = setInterval(() => {{
+                const timer = setInterval(() => {{
                     timeLeft--;
                     if (timeLeft <= 0) {{
-                        clearInterval(interval);
                         display.textContent = "0";
+                        clearInterval(timer);
                     }} else {{
                         display.textContent = timeLeft;
                     }}

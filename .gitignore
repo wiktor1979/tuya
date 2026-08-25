@@ -1,1 +1,29 @@
-Nothing should be ignored based on the provided file changes. The only modified file is 'dashboard.py', which is a source code file and should not be added to .gitignore.
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environments
+.env
+.venv/
+venv/
+env/
+
+# Database
+*.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Distribution
+dist/
+build/
+*.egg-info/
