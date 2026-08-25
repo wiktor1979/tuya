@@ -224,6 +224,32 @@ def load_manual_readings() -> pd.DataFrame:
 if st.button("🔄 Odśwież dane"):
     st.rerun()
 
+# --- Licznik odliczający do następnego automatycznego odświeżenia ---
+st.markdown(
+    f"""
+    <div style="font-size: 0.85em; color: #808080; margin-top: -15px; margin-bottom: 15px; text-align: center;">
+        Następne odświeżenie za: <span id="countdown">{refresh_interval // 1000}</span> s
+    </div>
+    <script>
+        (function() {{
+            var timeLeft = {refresh_interval // 1000};
+            var el = document.getElementById('countdown');
+            if (!el) return;
+            var timer = setInterval(function() {{
+                timeLeft--;
+                if (timeLeft <= 0) {{
+                    clearInterval(timer);
+                    el.innerHTML = "0";
+                }} else {{
+                    el.innerHTML = timeLeft;
+                }}
+            }}, 1000);
+        }})();
+    </script>
+    """,
+    unsafe_allow_html=True
+)
+
 # Sprawdź czy wybrano zakres "1 dzień" - wtedy pobierz dane od 00:00 do teraz
 is_today_range = (selected_range == "1 dzień")
 df = load_pump_data(hours_back, is_today=is_today_range)
