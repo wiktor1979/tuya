@@ -224,32 +224,55 @@ def load_manual_readings() -> pd.DataFrame:
 if st.button("🔄 Odśwież dane"):
     st.rerun()
 
-# --- Licznik odliczający do następnego automatycznego odświeżenia ---
-st.markdown(
-    f"""
-    <div style="font-size: 0.85em; color: #808080; margin-top: -15px; margin-bottom: 15px; text-align: center;">
-        Następne odświeżenie za: <span id="countdown">{refresh_interval // 1000}</span> s
-    </div>
-    <script>
-        (function() {{
-            var timeLeft = {refresh_interval // 1000};
-            var el = document.getElementById('countdown');
-            if (!el) return;
-            var timer = setInterval(function() {{
-                timeLeft--;
-                if (timeLeft <= 0) {{
-                    clearInterval(timer);
-                    el.innerHTML = "0";
-                }} else {{
-                    el.innerHTML = timeLeft;
-                }}
-            }}, 1000);
-        }})();
-    </script>
-    """,
-    unsafe_allow_html=True
-)
+ # --- LICZNIK ODŚWIEŻANIA ---
+    # Pobierz aktualny status sprężarki (zakładając, że df_latest istnieje i ma tę kolumnę)
+    # Jeśli dane nie są jeszcze załadowane, domyślnie zakładamy postój (300s)
+    compressor_active = False
+    if 'df_latest' in locals() and not df_latest.empty:
+        # Dostosuj nazwę kolumny do swojej bazy (np. 'comp_freq' > 0)
+        if 'comp_freq' in df_latest.columns:
+            compressor_active = df_latest['comp_freq'].iloc[-1] > 0
+        elif 'compressor_status' in df_latest.columns:
+            compressor_active = df_latest['compressor_status'].iloc[-1] > 0
 
+    # Ustal interwał w sekundach
+    interval_sec = 60 if compressor_active else 300
+    
+    # Unikalny ID dla tego konkretnego licznika (zapobiega błędom przy rerun)
+    timer_id = f"timer_{int(interval_sec)}_{hash(str(compressor_active))}"
+
+    st.markdown(
+        f"""
+        <div style="font-size: 0.85em; color: #666; margin-top: -15px; margin-bottom: 10px; text-align: center;">
+            Następne odświeżenie za: <span id="{timer_id}">{interval_sec}</span> s
+        </div>
+        <script>
+            // Usuń poprzedni timer dla tego ID, jeśli istnieje
+            if (window.timerIntervals && window.timerIntervals['{timer_id}']) {{
+                clearInterval(window.timerIntervals['{timer_id}']);
+            }}
+            if (!window.timerIntervals) window.timerIntervals = {{}};
+
+            var timeLeft = {interval_sec};
+            var el = document.getElementById('{timer_id}');
+            
+            if (el) {{
+                window.timerIntervals['{timer_id}'] = setInterval(function() {{
+                    timeLeft--;
+                    if (timeLeft <= 0) {{
+                        clearInterval(window.timerIntervals['{timer_id}']);
+                        el.innerHTML = "0";
+                        // Opcjonalnie: wymuszenie odświeżenia Streamlit po odliczeniu
+                        // location.reload(); 
+                    }} else {{
+                        el.innerHTML = timeLeft;
+                    }}
+                }}, 1000);
+            }}
+        </script>
+        """,
+        unsafe_allow_html=True
+    )
 # Sprawdź czy wybrano zakres "1 dzień" - wtedy pobierz dane od 00:00 do teraz
 is_today_range = (selected_range == "1 dzień")
 df = load_pump_data(hours_back, is_today=is_today_range)
