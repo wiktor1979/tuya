@@ -1,7 +1,6 @@
 """Dashboard Streamlit — orkiestrator modułów UI."""
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 from streamlit_autorefresh import st_autorefresh
 
 from app.services.data_loader import (
@@ -46,7 +45,7 @@ count = st_autorefresh(interval=interval_ms, limit=None, key=f"refresher_{interv
 
 status_color = "#4CAF50" if pump_running else "#888"
 status_text = "Pompa pracuje — odświeżanie co 1 min" if pump_running else "Pompa stoi — odświeżanie co 5 min"
-components.html(
+st.html(
     f"""
     <div style="text-align:center;font-size:0.85em;color:#aaa;font-family:sans-serif;">
         Następne odświeżenie za: <span id="cd" style="font-weight:bold;color:#4CAF50;">{interval_sec}</span> s
@@ -56,8 +55,7 @@ components.html(
     (function(){{let t={interval_sec};const d=document.getElementById('cd');
     const i=setInterval(()=>{{t--;if(t<=0){{clearInterval(i);d.textContent="0";}}else{{d.textContent=t;}}}},1000);}})();
     </script>
-    """,
-    height=30
+    """
 )
 
 # --- ŁADOWANIE DANYCH ---
