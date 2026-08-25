@@ -241,6 +241,9 @@ interval_ms = interval_sec * 1000
 count = st_autorefresh(interval=interval_ms, limit=None, key=f"refresher_{interval_sec}")
 
 # Komponent odliczający czas w przeglądarce — synchronizowany z interwałem autorefresh
+status_color = "#4CAF50" if pump_running else "#888"
+status_text = "Pompa pracuje — odświeżanie co 1 min" if pump_running else "Pompa stoi — odświeżanie co 5 min"
+
 components.html(
     f"""
     <!DOCTYPE html>
@@ -268,14 +271,14 @@ components.html(
             .timer-status {{
                 font-size: 0.75em;
                 margin-left: 8px;
-                color: {'\"#4CAF50\"' if pump_running else '\"#888\"'};
+                color: {status_color};
             }}
         </style>
     </head>
     <body>
         <div class="timer-container">
             Następne odświeżenie za: <span id="countdown" class="timer-val">{interval_sec}</span> s
-            <span class="timer-status">({'Pompa pracuje — odświeżanie co 1 min' if pump_running else 'Pompa stoi — odświeżanie co 5 min'})</span>
+            <span class="timer-status">{status_text}</span>
         </div>
 
         <script>
