@@ -40,9 +40,6 @@ def get_pump_status_for_refresh():
 pump_running = get_pump_status_for_refresh()
 refresh_interval = 60000 if pump_running else 300000  # 60s (1min) gdy pracuje, 300s (5min) gdy nie
 
-# Użycie streamlit-autorefresh do odświeżania w tle bez przeładowania strony
-from streamlit_autorefresh import st_autorefresh
-count = st_autorefresh(interval=refresh_interval, limit=None, key="frefresher")
 
 st.markdown("""
 <style>
