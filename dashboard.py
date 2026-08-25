@@ -3,6 +3,8 @@ from datetime import datetime, date, time as dtime, timedelta
 import pandas as pd
 import numpy as np
 import streamlit as st
+import streamlit.components.v1 as components
+from streamlit_autorefresh import st_autorefresh
 import plotly.express as px
 import plotly.graph_objects as go
 from db import (
@@ -39,7 +41,6 @@ def get_pump_status_for_refresh():
 
 pump_running = get_pump_status_for_refresh()
 refresh_interval = 60000 if pump_running else 300000  # 60s (1min) gdy pracuje, 300s (5min) gdy nie
-
 
 st.markdown("""
 <style>
@@ -174,7 +175,6 @@ def load_pump_data(hours: int, all_time: bool = False, is_today: bool = False) -
             ORDER BY timestamp ASC
         """
     elif is_today:
-        # Pobierz dane od 00:00 dzisiaj (czas lokalny)
         query = f"""
             SELECT 
                 datetime(timestamp, 'unixepoch', 'localtime') as czas,
@@ -218,24 +218,18 @@ def load_manual_readings() -> pd.DataFrame:
         df_man = apply_time_correction(df_man, time_offset_hours)
     return df_man
 
-# --- POPRAWIONY FRAGMENT KODU ---
-
-import streamlit.components.v1 as components
-
+# --- PRZYCISK RĘCZNEGO ODŚWIEŻANIA ---
 if st.button("🔄 Odśwież dane"):
     st.rerun()
-
-# --- AUTO-ODŚWIEŻANIE I LICZNIK ---
-from streamlit_autorefresh import st_autorefresh
 
 # --- LICZNIK I AUTO-ODŚWIEŻANIE ---
 interval_sec = 60 if pump_running else 300
 interval_ms = interval_sec * 1000
 
-# Wywołanie auto-odświeżania Streamlit
+# Wywołujemy st_autorefresh z dynamicznym kluczem zależnym od interwału
 count = st_autorefresh(interval=interval_ms, limit=None, key=f"frefresher_{interval_sec}")
 
-# Komponent odliczający w wyizolowanym iframe
+# Komponent odliczający czas w przeglądarce za pomocą izolowanego iframe
 components.html(
     f"""
     <!DOCTYPE html>
@@ -383,17 +377,9 @@ if not df.empty:
     df_pivot["defrost_start"] = ((df_pivot["defrost_num"] == 1) & (df_pivot["defrost_num"].shift(1, fill_value=0) == 0)).astype(int)
 
     # Wykrywanie startów i czasu pracy sprężarki
-    # Kompresor pracuje gdy comp_freq > 5 Hz
     df_pivot["comp_on"] = (df_pivot["comp_freq"] > 5).astype(int)
-    # Wykryj moment startu: zmiana z 0 na 1
     df_pivot["comp_start"] = ((df_pivot["comp_on"] == 1) & (df_pivot["comp_on"].shift(1, fill_value=0) == 0)).astype(int)
-    
-    # Grupowanie okresów pracy - każdy start tworzy nową grupę
     df_pivot["work_period"] = df_pivot["comp_start"].cumsum()
-    
-    # Oblicz czas trwania każdego okresu pracy w godzinach
-    # Dla każdego wiersza obliczamy dt_hours (różnica czasu od poprzedniego pomiaru)
-    # Następnie sumujemy dt_hours w ramach każdego okresu pracy
     df_pivot["dt_hours_work"] = np.where(df_pivot["comp_on"] == 1, df_pivot["dt_hours"], 0.0)
     
     # Agregacja dzienna dla pompy
@@ -410,11 +396,10 @@ if not df.empty:
         "E_th_cwu_row": "sum",
         "amb_temp": "mean",
         "defrost_start": "sum",
-        "comp_start": "sum",  # liczba startów sprężarki
-        "dt_hours_work": "sum"  # całkowity czas pracy sprężarki w godzinach
+        "comp_start": "sum",
+        "dt_hours_work": "sum"
     }).reset_index()
     
-    # Korekta czasu dla kolumny 'dzień' (pochodzącej z daty)
     if not daily_df.empty and 'dzień' in daily_df.columns:
         daily_df['dzień'] = pd.to_datetime(daily_df['dzień']).dt.date + pd.Timedelta(days=1 if time_offset_hours >= 12 else 0)
     
@@ -429,9 +414,9 @@ if not df.empty:
     total_defrosts = int(daily_df["defrost_start"].sum())
     total_comp_starts = int(daily_df["comp_start"].sum())
     total_work_hours = daily_df["dt_hours_work"].sum()
-    avg_work_time_per_start = (total_work_hours / total_comp_starts * 60) if total_comp_starts > 0 else 0.0  # w minutach
+    avg_work_time_per_start = (total_work_hours / total_comp_starts * 60) if total_comp_starts > 0 else 0.0
     
-    # Agregacja dzienna dla wszystkich danych (do tabeli niezależnej od zakresu)
+    # Agregacja dzienna dla wszystkich danych
     df_all_time_processed = df_all_time.copy()
     if not df_all_time_processed.empty:
         df_all_time_processed["val_combined"] = df_all_time_processed["val_num"]
@@ -466,7 +451,6 @@ if not df.empty:
         df_all_pivot["dt_hours"] = df_all_pivot["czas"].diff().dt.total_seconds().fillna(0) / 3600.0
         df_all_pivot["E_el_kwh"] = df_all_pivot["P_el_kw"].shift(1).fillna(0) * df_all_pivot["dt_hours"]
         
-        # Wykrywanie startów i czasu pracy sprężarki dla danych historycznych
         df_all_pivot["comp_on"] = (df_all_pivot["comp_freq"] > 5).astype(int)
         df_all_pivot["comp_start"] = ((df_all_pivot["comp_on"] == 1) & (df_all_pivot["comp_on"].shift(1, fill_value=0) == 0)).astype(int)
         df_all_pivot["dt_hours_work"] = np.where(df_all_pivot["comp_on"] == 1, df_all_pivot["dt_hours"], 0.0)
@@ -490,7 +474,6 @@ if not df.empty:
             "dt_hours_work": "sum"
         }).reset_index()
         
-        # Korekta czasu dla kolumny 'dzień' (pochodzącej z daty)
         if not daily_df_all.empty and 'dzień' in daily_df_all.columns:
             daily_df_all['dzień'] = pd.to_datetime(daily_df_all['dzień']).dt.date + pd.Timedelta(days=1 if time_offset_hours >= 12 else 0)
         
@@ -512,18 +495,13 @@ else:
 weather_df = pd.DataFrame()
 if not df_pivot.empty:
     try:
-        # Jeśli wybrano zakres "1 dzień", pobierz dane pogodowe tylko z dzisiaj
         weather_data = get_weather_data(days=30, is_today=is_today_range)
         if weather_data:
-            # Elastyczne tworzenie DataFrame - dopasowanie do faktycznej struktury danych z bazy (8 kolumn)
             if len(weather_data) > 0 and len(weather_data[0]) >= 8:
-                # Struktura z bazy: id, timestamp, temperature, humidity, windspeed, precipitation, latitude, longitude
                 weather_df = pd.DataFrame(weather_data, columns=['id', 'timestamp', 'temperature', 'humidity', 'windspeed', 'precipitation', 'latitude', 'longitude'])
-                # Znormalizuj nazwy kolumn do oczekiwanego formatu
                 weather_df = weather_df.rename(columns={'windspeed': 'wind_speed'})
-                # Dodaj brakujące kolumny jeśli ich nie ma
                 if 'pressure' not in weather_df.columns:
-                    weather_df['pressure'] = 1013.0  # średnie ciśnienie
+                    weather_df['pressure'] = 1013.0
                 if 'cloud_cover' not in weather_df.columns:
                     weather_df['cloud_cover'] = 0.0
                 if 'created_at' not in weather_df.columns:
@@ -531,14 +509,14 @@ if not df_pivot.empty:
     except Exception as e:
         st.warning(f"Nie udało się załadować danych pogodowych: {e}")
 
-# --- GENEROWANIE RAPORTU DIAGNOSTYCZNEGO (dla zakładki Diagnostyka) ---
+# --- GENEROWANIE RAPORTU DIAGNOSTYCZNEGO ---
 diagnostic_report = None
 if not df_pivot.empty:
     try:
         diagnostic_report = generate_diagnostic_report(
             df=df_pivot,
             weather_df=weather_df,
-            electricity_price=electricity_price  # zł/kWh - pobrane z UI
+            electricity_price=electricity_price
         )
     except Exception as e:
         st.warning(f"Błąd generowania raportu diagnostycznego: {e}")
@@ -599,7 +577,6 @@ with tab_main:
         st.plotly_chart(fig_cop, width="stretch")
 
         st.subheader("📈 Przebieg wybranych parametrów")
-        # Zastosuj korektę czasu dla surowych danych przed filtrowaniem
         df_corrected = apply_time_correction(df.copy(), time_offset_hours)
         all_codes = df_corrected["code"].unique().tolist()
         default_temps = [c for c in ["tank_temp", "in_water_temp", "out_water_temp", "heat_temp_set", "amb_temp"] if c in all_codes]
@@ -674,9 +651,7 @@ with tab_scop:
         daily_display_all["SCOP Dzienny"] = daily_display_all["SCOP Dzienny"].round(2)
         daily_display_all["Cykle Sprężarki"] = daily_display_all["Cykle Sprężarki"].astype(int)
         
-        # Sortowanie malejąco po dacie (najnowsze na górze)
         daily_display_all = daily_display_all.sort_values(by="Data", ascending=False)
-        
         st.dataframe(daily_display_all, width="stretch", hide_index=True)
 
 # --- ZAKŁADKA 3: DIAGNOSTYKA ---
@@ -685,11 +660,9 @@ with tab_diag:
     if df.empty:
         st.info("Brak danych diagnostycznych.")
     else:
-        # --- SEKCJA 1: RAPORT ZAAWANSOWANEJ DIAGNOSTYKI ---
         st.subheader("📋 Raport Zaawansowanej Diagnostyki")
         
         if diagnostic_report:
-            # Kolumny z kluczowymi metrykami
             diag_col1, diag_col2, diag_col3, diag_col4 = st.columns(4)
             
             # Cykle krótkie
@@ -748,7 +721,6 @@ with tab_diag:
                 inv_col2.metric("Efektywność modulacji", f"{inv.modulation_efficiency:.1f}%")
                 inv_col3.metric("Czas w zakresie opt. (30-60 Hz)", f"{inv.optimal_range_pct:.1f}%")
                 
-                # Wykres rozkładu częstotliwości
                 if 'comp_freq' in df_pivot.columns:
                     fig_hist = px.histogram(
                         df_pivot[df_pivot['comp_freq'] > 0],
@@ -822,23 +794,19 @@ with tab_diag:
         st.markdown("---")
         st.subheader("📊 Tabela: Statystyki dzienne pracy sprężarki")
         
-        # Przygotowanie tabeli z danymi dziennymi
         daily_comp_stats = daily_df_all[["dzień", "comp_start", "dt_hours_work"]].copy()
         daily_comp_stats.columns = ["Data", "Liczba startów", "Czas pracy [h]"]
         
-        # Oblicz średni czas pracy na jeden start (w minutach)
         daily_comp_stats["Śr. czas pracy/start [min]"] = np.where(
             daily_comp_stats["Liczba startów"] > 0,
             (daily_comp_stats["Czas pracy [h]"] / daily_comp_stats["Liczba startów"]) * 60,
             0.0
         )
         
-        # Zaokrąglenie wartości
         daily_comp_stats["Czas pracy [h]"] = daily_comp_stats["Czas pracy [h]"].round(2)
         daily_comp_stats["Śr. czas pracy/start [min]"] = daily_comp_stats["Śr. czas pracy/start [min]"].round(1)
         daily_comp_stats["Liczba startów"] = daily_comp_stats["Liczba startów"].astype(int)
         
-        # Wyświetlenie tabeli
         st.dataframe(daily_comp_stats, width="stretch", hide_index=True)
         
         st.markdown("---")
@@ -867,9 +835,7 @@ with tab_weather:
         if diagnostic_report and diagnostic_report.weather_correlation:
             weather = diagnostic_report.weather_correlation
             
-            # Kolumny z metrykami pogodowymi
             wx_col1, wx_col2, wx_col3, wx_col4 = st.columns(4)
-            
             wx_col1.metric("Średnia temperatura zewn.", f"{weather.temp_outside_avg:.1f}°C")
             wx_col2.metric("Korelacja COP↔Temp", f"{weather.cop_vs_temp_correlation:.2f}", 
                           help="Współczynnik korelacji Pearsona (-1 do 1). Wartości dodatnie oznaczają że COP rośnie z temperaturą.")
@@ -879,8 +845,6 @@ with tab_weather:
                           help="Stopniodni grzania - miara chłodu okresu")
             
             st.markdown("---")
-            
-            # Zakresy temperatur i COP
             st.subheader("📊 COP w zależności od zakresu temperatury")
             
             if weather.cop_at_temp_ranges:
@@ -890,7 +854,6 @@ with tab_weather:
                 ])
                 st.dataframe(ranges_df, width="stretch", hide_index=True)
                 
-                # Wykres słupkowy COP vs temperature ranges
                 fig_cop_ranges = px.bar(
                     ranges_df,
                     x="Zakres temp.",
@@ -904,15 +867,11 @@ with tab_weather:
                 st.plotly_chart(fig_cop_ranges, width="stretch")
             
             st.markdown("---")
-            
-            # Optymalny zakres temperatur
             opt_range = weather.optimal_temp_range
             if opt_range[0] != opt_range[1]:
                 st.success(f"🎯 **Optymalny zakres temperatur dla najlepszego COP:** {opt_range[0]:.1f}°C do {opt_range[1]:.1f}°C")
             
             st.markdown("---")
-            
-            # Wykres scatter: COP vs temperatura zewnętrzna
             st.subheader("📈 Korelacja COP z temperaturą zewnętrzną")
             
             if 'amb_temp' in df_pivot.columns and not df_pivot['amb_temp'].isna().all():
@@ -935,8 +894,6 @@ with tab_weather:
                         color_discrete_map={"CO": "#2ECC71", "CWU": "#E67E22"}
                     )
                     
-                    # Dodaj linię trendu
-                    import numpy as np
                     if len(scatter_df) > 10:
                         z = np.polyfit(scatter_df['amb_temp'].dropna(), scatter_df['COP'].dropna(), 1)
                         p = np.poly1d(z)
@@ -951,18 +908,13 @@ with tab_weather:
                     st.plotly_chart(fig_scatter, width="stretch")
             
             st.markdown("---")
-            
-            # Wykres porównawczy: temperatura z serwisu internetowego vs pompa ciepła
             st.subheader("🌡️ Porównanie temperatury: Serwis pogodowy vs Pompa ciepła")
             
             if not weather_df.empty and 'amb_temp' in df_pivot.columns:
-                # Przygotowanie danych do wykresu
                 weather_df_copy = weather_df.copy()
                 weather_df_copy['timestamp'] = pd.to_datetime(weather_df_copy['timestamp'], unit='s')
-                # Zastosowanie tej samej korekty czasu jak dla danych z pompy ciepła
                 weather_df_copy['timestamp'] = weather_df_copy['timestamp'] + pd.Timedelta(hours=time_offset_hours)
                 
-                # Filtrowanie do zakresu czasowego df_pivot
                 if not df_pivot.empty and 'czas' in df_pivot.columns:
                     min_time = df_pivot['czas'].min()
                     max_time = df_pivot['czas'].max()
@@ -973,8 +925,6 @@ with tab_weather:
                     
                     if not weather_filtered.empty:
                         fig_compare = go.Figure()
-                        
-                        # Temperatura z serwisu internetowego (linia ciągła)
                         fig_compare.add_trace(go.Scatter(
                             x=weather_filtered['timestamp'],
                             y=weather_filtered['temperature'],
@@ -984,7 +934,6 @@ with tab_weather:
                             yaxis='y1'
                         ))
                         
-                        # Temperatura z pompy ciepła (linia przerywana)
                         pump_temp_df = df_pivot[df_pivot['amb_temp'].notna()].copy()
                         if not pump_temp_df.empty:
                             fig_compare.add_trace(go.Scatter(
@@ -1003,7 +952,6 @@ with tab_weather:
                             hovermode='x unified',
                             legend=dict(x=0, y=1.1, orientation='h')
                         )
-                        
                         st.plotly_chart(fig_compare, width="stretch")
                     else:
                         st.info("Brak danych pogodowych w wybranym zakresie czasu.")
@@ -1015,14 +963,10 @@ with tab_weather:
                 st.info("Brak danych o temperaturze zewnętrznej z pompy ciepła.")
             
             st.markdown("---")
-            
-            # Wykres czasowy: temperatura + COP
             st.subheader("📊 Przebieg czasowy: Temperatura zewnętrzna i COP")
             
             if 'amb_temp' in df_pivot.columns and not df_pivot['amb_temp'].isna().all():
                 fig_dual = go.Figure()
-                
-                # Filtruj dane do niepustych wartości temperatury
                 temp_df = df_pivot[df_pivot['amb_temp'].notna()].copy()
                 
                 if not temp_df.empty:
@@ -1052,33 +996,24 @@ with tab_weather:
                         hovermode='x unified',
                         legend=dict(x=0, y=1.1, orientation='h')
                     )
-                    
                     st.plotly_chart(fig_dual, width="stretch")
                 else:
                     st.info("Brak danych o temperaturze zewnętrznej w wybranym zakresie czasu.")
-        
         else:
             st.warning("Nie udało się wygenerować raportu korelacji pogodowej. Sprawdź czy dane pogodowe są dostępne.")
         
-        # Tabela z danymi pogodowymi
         st.markdown("---")
         st.subheader("📋 Ostatnie dane pogodowe z bazy")
         
         if not weather_df.empty:
-            # Obliczanie początku bieżącego dnia kalendarzowego z uwzględnieniem przesunięcia czasowego
             now_local = datetime.now() + timedelta(hours=time_offset_hours)
             start_of_day_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-            
-            # Konwersja z powrotem na czas serwerowy dla filtrowania
             start_query_time = start_of_day_local - timedelta(hours=time_offset_hours)
-            
-            # Filtrowanie danych tylko z bieżącego dnia (po korekcie czasu)
             weather_today = weather_df[weather_df['timestamp'] >= start_query_time.timestamp()].copy()
             
             if not weather_today.empty:
                 weather_display = weather_today[['timestamp', 'temperature', 'humidity', 'pressure', 'wind_speed']].copy()
                 weather_display['timestamp'] = pd.to_datetime(weather_display['timestamp'], unit='s')
-                # Zastosowanie tej samej korekty czasu jak dla danych z pompy ciepła
                 weather_display['timestamp'] = weather_display['timestamp'] + pd.Timedelta(hours=time_offset_hours)
                 weather_display['timestamp'] = weather_display['timestamp'].dt.strftime('%Y-%m-%d %H:%M')
                 weather_display.columns = ['Czas', 'Temp. [°C]', 'Wilgotność [%]', 'Ciśnienie [hPa]', 'Wiatr [m/s]']
@@ -1093,7 +1028,6 @@ with tab_meter:
     st.header("⚡ Rejestracja i Analiza Fizycznego Licznika Energii")
     st.caption(f"Dane wprowadzane ręcznie są rejestrowane w bazie pod identyfikatorem urządzenia: `{MANUAL_METER_DEV_ID}`.")
 
-    # Zarządzanie stanem formularza (czyszczenie pola po dodaniu)
     if "meter_val_input" not in st.session_state:
         st.session_state["meter_val_input"] = ""
 
@@ -1110,14 +1044,13 @@ with tab_meter:
             add_val_str = st.text_input(
                 "Stan licznika [kWh]", 
                 value=st.session_state["meter_val_input"], 
-                placeholder="np. 12450.5",
+                placeholder="np. 12450.5", 
                 key="input_meter_str"
             )
             
             btn_add = st.form_submit_button("💾 Zapisz stan licznika", width="stretch")
 
             if btn_add:
-                # Walidacja danych
                 clean_str = add_val_str.strip().replace(",", ".")
                 if not clean_str:
                     st.error("Pole stanu licznika nie może być puste!")
@@ -1186,10 +1119,8 @@ with tab_meter:
     else:
         df_display = df_meter_all.copy()
         df_display["czas_dt"] = pd.to_datetime(df_display["czas"])
-        # Korekta czasu już została zastosowana w load_manual_readings(), więc tylko sortujemy
         df_display = df_display.sort_values("czas_dt").reset_index(drop=True)
 
-        # Różnice pomiędzy kolejnymi wpisami
         df_display["Zużycie [kWh]"] = df_display["stan_kwh"].diff()
         df_display["Okres [h]"] = df_display["timestamp"].diff() / 3600.0
         df_display["Średnia Moc [kW]"] = np.where(df_display["Okres [h]"] > 0, df_display["Zużycie [kWh]"] / df_display["Okres [h]"], np.nan)
@@ -1208,17 +1139,14 @@ with tab_meter:
         st.subheader("📊 Dzienne Zużycie Energii: Licznik Fizyczny (Estymowany) vs Wyliczenia Pompy")
 
         if len(df_display) >= 2:
-            # Tworzenie ciągłej siatki czasowej (co 1 godzinę) do liniowej interpolacji brakujących dni
             df_interp = df_display.set_index("czas_dt")[["stan_kwh"]].resample("1h").interpolate(method="time")
             df_interp_daily = df_interp.resample("1D").first()
             df_interp_daily["Zuzycie_Licznik_kWh"] = df_interp_daily["stan_kwh"].diff().shift(-1)
-            # Korekta czasu dla daty dziennej - przesunięcie o dzień jeśli offset >= 12h
             df_interp_daily.index = df_interp_daily.index + pd.Timedelta(days=1 if time_offset_hours >= 12 else 0)
             df_interp_daily["dzień"] = df_interp_daily.index.date
             
             meter_daily = df_interp_daily.dropna(subset=["Zuzycie_Licznik_kWh"])[["dzień", "Zuzycie_Licznik_kWh"]].reset_index(drop=True)
 
-            # Połączenie ze statystykami dziennymi wyliczonymi przez pompę
             if not daily_df_all.empty:
                 comp_df = pd.merge(meter_daily, daily_df_all[["dzień", "E_el_total"]], on="dzień", how="outer").sort_values("dzień")
             else:
@@ -1230,7 +1158,6 @@ with tab_meter:
 
             fig_comp = go.Figure()
             
-            # Słupki: Fizyczny licznik (estymacja dzienna)
             fig_comp.add_trace(go.Bar(
                 x=comp_df["dzień_str"],
                 y=comp_df["Zuzycie_Licznik_kWh"],
@@ -1238,7 +1165,6 @@ with tab_meter:
                 marker_color="#2ECC71"
             ))
 
-            # Linia: Wyliczenia automatyczne pompy ciepła
             fig_comp.add_trace(go.Scatter(
                 x=comp_df["dzień_str"],
                 y=comp_df["Zuzycie_Pompa_kWh"],
@@ -1258,7 +1184,7 @@ with tab_meter:
         else:
             st.info("Wprowadź minimum 2 odczyty licznika w różnych dniach, aby wygenerować wykres interpolacji dobowej.")
 
-# --- ZAKŁADKA 5: EKSPORT DANYCH ---
+# --- ZAKŁADKA 6: EKSPORT DANYCH ---
 with tab_export:
     st.header("📁 Eksport Danych do CSV")
     st.markdown("""
@@ -1273,7 +1199,6 @@ with tab_export:
     if df.empty:
         st.warning("Brak danych do eksportu w wybranym zakresie czasowym.")
     else:
-        # Opcje eksportu
         exp_col1, exp_col2 = st.columns(2)
         with exp_col1:
             export_format = st.selectbox(
@@ -1282,7 +1207,6 @@ with tab_export:
                 index=1
             )
         
-        # Przygotowanie danych do eksportu
         if export_format == "Dane surowe telemetryczne":
             export_df = df.copy()
             filename = f"pompa_dane_surowe_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
@@ -1301,7 +1225,6 @@ with tab_export:
             st.subheader("📅 Podgląd podsumowania dziennego")
             st.dataframe(export_df.head(10), width="stretch")
         
-        # Generowanie CSV do pobrania
         csv_data = export_df.to_csv(index=False, decimal=';', sep=';').encode('utf-8')
         
         st.download_button(
