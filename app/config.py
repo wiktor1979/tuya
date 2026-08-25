@@ -70,7 +70,7 @@ HISTERESIS_CONFIG = {
     "back_temp":      {"active": 5, "idle": 15, "last_value": None},
 
     # Energia i zasilanie
-    "ac_curr":        {"active": 1.0, "idle": 1.0, "last_value": None},  # Skala x10 (2.0 = krok 0.2A)
+    "ac_curr":        {"active": 2.0, "idle": 5.0, "last_value": None},  # Skala x10 (2.0 = krok 0.2A)
     "ac_vol":         {"active": 3.0, "idle": 5.0, "last_value": None},
 
     # Praca układu mechanicznego
