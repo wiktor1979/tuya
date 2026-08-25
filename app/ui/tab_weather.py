@@ -61,7 +61,7 @@ def _render_cop_temp_ranges(weather):
             {"Zakres temp.": range_label.replace("_", " ").title(), "Śr. COP": cop}
             for range_label, cop in weather.cop_at_temp_ranges.items()
         ])
-        st.dataframe(ranges_df, use_container_width=True, hide_index=True)
+        st.dataframe(ranges_df, width="stretch", hide_index=True)
 
         fig_cop_ranges = px.bar(
             ranges_df, x="Zakres temp.", y="Śr. COP",
@@ -70,7 +70,7 @@ def _render_cop_temp_ranges(weather):
             color="Śr. COP", color_continuous_scale="RdYlGn"
         )
         fig_cop_ranges.update_layout(coloraxis_showscale=False)
-        st.plotly_chart(fig_cop_ranges, use_container_width=True)
+        st.plotly_chart(fig_cop_ranges, width="stretch")
 
     opt_range = weather.optimal_temp_range
     if opt_range[0] != opt_range[1]:
@@ -106,7 +106,7 @@ def _render_cop_scatter(df_pivot: pd.DataFrame):
             line=dict(color='red', width=2, dash='dash')
         ))
 
-    st.plotly_chart(fig_scatter, use_container_width=True)
+    st.plotly_chart(fig_scatter, width="stretch")
 
 
 def _render_temp_comparison(df_pivot: pd.DataFrame, weather_df: pd.DataFrame, time_offset_hours: int):
@@ -159,7 +159,7 @@ def _render_temp_comparison(df_pivot: pd.DataFrame, weather_df: pd.DataFrame, ti
         xaxis=dict(title="Czas"), yaxis=dict(title="Temperatura [°C]"),
         hovermode='x unified', legend=dict(x=0, y=1.1, orientation='h')
     )
-    st.plotly_chart(fig_compare, use_container_width=True)
+    st.plotly_chart(fig_compare, width="stretch")
 
 
 def _render_temp_cop_dual_axis(df_pivot: pd.DataFrame):
@@ -192,7 +192,7 @@ def _render_temp_cop_dual_axis(df_pivot: pd.DataFrame):
         yaxis2=dict(title="COP", side='right', overlaying='y'),
         hovermode='x unified', legend=dict(x=0, y=1.1, orientation='h')
     )
-    st.plotly_chart(fig_dual, use_container_width=True)
+    st.plotly_chart(fig_dual, width="stretch")
 
 
 def _render_weather_table(weather_df: pd.DataFrame, time_offset_hours: int):
@@ -217,4 +217,4 @@ def _render_weather_table(weather_df: pd.DataFrame, time_offset_hours: int):
     weather_display['timestamp'] = weather_display['timestamp'] + pd.Timedelta(hours=time_offset_hours)
     weather_display['timestamp'] = weather_display['timestamp'].dt.strftime('%Y-%m-%d %H:%M')
     weather_display.columns = ['Czas', 'Temp. [°C]', 'Wilgotność [%]', 'Ciśnienie [hPa]', 'Wiatr [m/s]']
-    st.dataframe(weather_display.head(20), use_container_width=True, hide_index=True)
+    st.dataframe(weather_display.head(20), width="stretch", hide_index=True)

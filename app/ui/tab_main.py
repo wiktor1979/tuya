@@ -54,7 +54,7 @@ def render(df: pd.DataFrame, df_pivot: pd.DataFrame, resample_rule, time_offset_
         markers=(resample_rule is not None)
     )
     fig_cop.update_layout(hovermode="x unified")
-    st.plotly_chart(fig_cop, use_container_width=True)
+    st.plotly_chart(fig_cop, width="stretch")
 
     st.subheader("📈 Przebieg wybranych parametrów")
     df_corrected = apply_time_correction(df.copy(), time_offset_hours)
@@ -82,4 +82,4 @@ def render(df: pd.DataFrame, df_pivot: pd.DataFrame, resample_rule, time_offset_
             title="Wykres parametrów w czasie"
         )
         fig_temp.update_layout(hovermode="x unified")
-        st.plotly_chart(fig_temp, use_container_width=True)
+        st.plotly_chart(fig_temp, width="stretch")

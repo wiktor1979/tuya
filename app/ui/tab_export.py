@@ -32,19 +32,19 @@ def render(df: pd.DataFrame, df_pivot: pd.DataFrame, daily_df: pd.DataFrame, hou
         export_df = df.copy()
         filename = f"pompa_dane_surowe_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
         st.subheader("📊 Podgląd danych surowych")
-        st.dataframe(export_df.head(10), use_container_width=True)
+        st.dataframe(export_df.head(10), width="stretch")
 
     elif export_format == "Dane przetworzone (z obliczeniami)":
         export_df = df_pivot.copy() if df_pivot is not None else pd.DataFrame()
         filename = f"pompa_dane_przetworzone_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
         st.subheader("📈 Podgląd danych przetworzonych")
-        st.dataframe(export_df.head(10), use_container_width=True)
+        st.dataframe(export_df.head(10), width="stretch")
 
     elif export_format == "Podsumowanie dzienne":
         export_df = daily_df.copy()
         filename = f"pompa_podsumowanie_dzienne_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
         st.subheader("📅 Podgląd podsumowania dziennego")
-        st.dataframe(export_df.head(10), use_container_width=True)
+        st.dataframe(export_df.head(10), width="stretch")
     else:
         export_df = pd.DataFrame()
         filename = "export.csv"
@@ -57,7 +57,6 @@ def render(df: pd.DataFrame, df_pivot: pd.DataFrame, daily_df: pd.DataFrame, hou
             data=csv_data,
             file_name=filename,
             mime="text/csv",
-            use_container_width=True
         )
 
         st.info(f"📝 Plik będzie zawierał {len(export_df)} wierszy danych z zakresu: {hours_back} godzin")

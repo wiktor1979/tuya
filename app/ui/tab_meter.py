@@ -35,7 +35,7 @@ def render(daily_df_all: pd.DataFrame, time_offset_hours: int):
                 key="input_meter_str"
             )
 
-            btn_add = st.form_submit_button("💾 Zapisz stan licznika", use_container_width=True)
+            btn_add = st.form_submit_button("💾 Zapisz stan licznika")
 
             if btn_add:
                 clean_str = add_val_str.strip().replace(",", ".")
@@ -78,8 +78,8 @@ def render(daily_df_all: pd.DataFrame, time_offset_hours: int):
                     edit_val = st.number_input("Popraw stan [kWh]", value=float(selected_rec["stan_kwh"]), step=0.1, format="%.2f")
 
                     col_e1, col_e2 = st.columns(2)
-                    btn_update = col_e1.form_submit_button("💾 Zapisz zmiany", use_container_width=True)
-                    btn_delete = col_e2.form_submit_button("🗑️ Usuń wpis", use_container_width=True)
+                    btn_update = col_e1.form_submit_button("💾 Zapisz zmiany")
+                    btn_delete = col_e2.form_submit_button("🗑️ Usuń wpis")
 
                     if btn_update:
                         edit_ts = int(datetime.combine(edit_date, edit_time).timestamp())
@@ -125,7 +125,7 @@ def _render_meter_table(time_offset_hours: int, daily_df_all: pd.DataFrame):
     table_view["Czas od poprz. [h]"] = table_view["Czas od poprz. [h]"].round(1)
     table_view["Śr. Moc w okresie [kW]"] = table_view["Śr. Moc w okresie [kW]"].round(2)
 
-    st.dataframe(table_view.sort_values("ID", ascending=False), use_container_width=True, hide_index=True)
+    st.dataframe(table_view.sort_values("ID", ascending=False), width="stretch", hide_index=True)
 
     # --- WYKRES PORÓWNAWCZY ---
     st.markdown("---")
@@ -167,4 +167,4 @@ def _render_meter_table(time_offset_hours: int, daily_df_all: pd.DataFrame):
         xaxis_title="Dzień", yaxis_title="Energia elektryczna [kWh]",
         hovermode="x unified", barmode="group"
     )
-    st.plotly_chart(fig_comp, use_container_width=True)
+    st.plotly_chart(fig_comp, width="stretch")

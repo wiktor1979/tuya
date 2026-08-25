@@ -15,14 +15,23 @@ Aplikacja do monitorowania pompy ciepła z wykorzystaniem API Tuya Pulsar (EU) z
 │   ├── services/                 # Usługi biznesowe
 │   │   ├── __init__.py
 │   │   ├── database.py           # Warstwa dostępu do bazy (z poolingiem, WAL, indeksami)
+│   │   ├── data_loader.py        # Ładowanie i przetwarzanie danych dla dashboardu
 │   │   ├── tuya_client.py        # Klient Tuya Pulsar z filtrem deadband
 │   │   ├── calculator.py         # Kalkulator COP/SCOP
 │   │   ├── exporter.py           # Eksport CSV
 │   │   └── analytics.py          # Zaawansowana diagnostyka i analiza
-│   └── ui/                       # Komponenty UI
-│       └── __init__.py
+│   └── ui/                       # Komponenty UI dashboardu
+│       ├── __init__.py
+│       ├── styles.py             # CSS i stałe wizualne (PARAM_INFO)
+│       ├── sidebar.py            # Panel boczny z ustawieniami
+│       ├── tab_main.py           # Zakładka: Panel Główny
+│       ├── tab_scop.py           # Zakładka: Bilans Energetyczny & SCOP
+│       ├── tab_diagnostics.py    # Zakładka: Diagnostyka Pompy
+│       ├── tab_weather.py        # Zakładka: Kontekst Pogodowy
+│       ├── tab_meter.py          # Zakładka: Fizyczny Licznik Energii
+│       └── tab_export.py         # Zakładka: Eksport Danych
 ├── main.py                       # Skrypt zbieracza danych (z wątkiem pogodowym)
-├── dashboard.py                  # Dashboard Streamlit (6 zakładek)
+├── dashboard.py                  # Dashboard Streamlit — orkiestrator modułów UI
 ├── db.py                         # Warstwa kompatybilności wstecznej
 ├── requirements.txt              # Zależności Python
 ├── Dockerfile                    # Kontener Docker
@@ -38,11 +47,21 @@ Projekt został poddany refaktoryzacji zgodnie z zasadą pojedynczej odpowiedzia
 - **models/** - Definicje struktur danych (dataclasses)
 - **services/** - Logika biznesowa podzielona na niezależne moduły:
   - `database.py` - Operacje CRUD na SQLite z connection pooling, trybem WAL i optymalnymi indeksami
+  - `data_loader.py` - Zapytania SQL i przetwarzanie danych dla dashboardu (COP, SCOP, energia, statystyki dzienne)
   - `tuya_client.py` - Komunikacja z Tuya Pulsar, deszyfrowanie AES-GCM/ECB, filtr deadband z `__slots__`
   - `calculator.py` - Obliczenia wydajności (COP, SCOP, energia)
   - `exporter.py` - Eksport danych do CSV
   - `analytics.py` - Zaawansowana diagnostyka: wykrywanie cykli krótkich, analiza inwertera, szacowanie COP, korelacja pogodowa
-- **ui/** - Komponenty interfejsu użytkownika
+- **ui/** - Modularny interfejs użytkownika (każda zakładka to osobny moduł):
+  - `styles.py` - CSS, stałe wizualne, metadane parametrów (PARAM_INFO)
+  - `sidebar.py` - Panel boczny z konfiguracją (zakres czasu, kalibracja, koszty)
+  - `tab_main.py` - Bieżące metryki i wykresy parametrów
+  - `tab_scop.py` - Bilans energetyczny, SCOP, statystyki dzienne
+  - `tab_diagnostics.py` - Diagnostyka: cykle krótkie, inwerter, ostrzeżenia
+  - `tab_weather.py` - Korelacja pogodowa, porównanie źródeł temperatury
+  - `tab_meter.py` - Ręczne odczyty fizycznego licznika energii
+  - `tab_export.py` - Eksport danych do CSV
+- **dashboard.py** - Lekki orkiestrator (~140 linii): ładuje dane, konfiguruje stronę, deleguje do zakładek
 - **db.py** - Warstwa kompatybilności dla istniejących importów
 - **main.py** - Główny skrypt zbieracza z wątkiem pogodowym (Open-Meteo API)
 

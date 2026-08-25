@@ -100,7 +100,7 @@ def _render_advanced_diagnostics(df_pivot: pd.DataFrame, report: DiagnosticRepor
             )
             fig_hist.add_vrect(x0=30, x1=60, fillcolor="green", opacity=0.15,
                                annotation_text="Zakres optymalny (30-60 Hz)", annotation_position="top")
-            st.plotly_chart(fig_hist, use_container_width=True)
+            st.plotly_chart(fig_hist, width="stretch")
 
     st.markdown("---")
     st.subheader("🔄 Analiza cykli krótkich")
@@ -117,7 +117,7 @@ def _render_advanced_diagnostics(df_pivot: pd.DataFrame, report: DiagnosticRepor
                 "Strata energii [kWh]": f"{cycle.energy_wasted_kwh:.3f}"
             })
         cycles_df = pd.DataFrame(cycles_data)
-        st.dataframe(cycles_df, use_container_width=True, hide_index=True)
+        st.dataframe(cycles_df, width="stretch", hide_index=True)
     else:
         st.success("✅ Nie wykryto cykli krótkich w analizowanym okresie.")
 
@@ -173,7 +173,7 @@ def _render_standard_diagnostics(df_pivot: pd.DataFrame, daily_df_all: pd.DataFr
         daily_comp_stats["Czas pracy [h]"] = daily_comp_stats["Czas pracy [h]"].round(2)
         daily_comp_stats["Śr. czas pracy/start [min]"] = daily_comp_stats["Śr. czas pracy/start [min]"].round(1)
         daily_comp_stats["Liczba startów"] = daily_comp_stats["Liczba startów"].astype(int)
-        st.dataframe(daily_comp_stats, use_container_width=True, hide_index=True)
+        st.dataframe(daily_comp_stats, width="stretch", hide_index=True)
 
     st.markdown("---")
     st.subheader("1️⃣ Odbiór ciepła przez instalację (Różnica temperatur ΔT)")
@@ -181,7 +181,7 @@ def _render_standard_diagnostics(df_pivot: pd.DataFrame, daily_df_all: pd.DataFr
     fig_dt.add_trace(go.Scatter(x=df_pivot["czas"], y=df_pivot["delta_t"], mode='lines', name='ΔT (°C)', line=dict(color='#3498DB', width=2)))
     fig_dt.add_hrect(y0=3.0, y1=7.0, fillcolor="Green", opacity=0.15, line_width=0, annotation_text="Strefa optymalna (3 - 7 °C)", annotation_position="top left")
     fig_dt.update_layout(hovermode="x unified", xaxis_title="Czas", yaxis_title="ΔT (°C)")
-    st.plotly_chart(fig_dt, use_container_width=True)
+    st.plotly_chart(fig_dt, width="stretch")
 
     st.subheader("2️⃣ Bezpieczeństwo Sprężarki (Temperatura Tłoczenia Discharge)")
     fig_disc = go.Figure()
@@ -189,4 +189,4 @@ def _render_standard_diagnostics(df_pivot: pd.DataFrame, daily_df_all: pd.DataFr
     fig_disc.add_trace(go.Scatter(x=df_pivot["czas"], y=df_pivot["comp_freq"], mode='lines', name='Obroty sprężarki (Hz)', line=dict(color='#9B59B6', width=1.5, dash='dot')))
     fig_disc.add_hline(y=90.0, line_dash="dash", line_color="Red", annotation_text="Krytyczne 90°C", annotation_position="bottom right")
     fig_disc.update_layout(hovermode="x unified", xaxis_title="Czas", yaxis_title="Wartość")
-    st.plotly_chart(fig_disc, use_container_width=True)
+    st.plotly_chart(fig_disc, width="stretch")

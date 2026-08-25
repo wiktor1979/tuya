@@ -58,7 +58,7 @@ def render(
         go.Bar(name='Ciepło oddane [kWh]', x=['Ogrzewanie CO', 'Ciepła Woda CWU'], y=[scop['e_th_co'], scop['e_th_cwu']], marker_color='#E74C3C')
     ])
     fig_bar.update_layout(barmode='group', title="Porównanie energii pobranej do oddanej")
-    st.plotly_chart(fig_bar, use_container_width=True)
+    st.plotly_chart(fig_bar, width="stretch")
 
     st.markdown("---")
     st.subheader("📅 Dzienny Bilans Zużycia, Temperatur i Defrostów (wszystkie dane)")
@@ -78,4 +78,4 @@ def render(
     daily_display_all["Cykle Sprężarki"] = daily_display_all["Cykle Sprężarki"].astype(int)
 
     daily_display_all = daily_display_all.sort_values(by="Data", ascending=False)
-    st.dataframe(daily_display_all, use_container_width=True, hide_index=True)
+    st.dataframe(daily_display_all, width="stretch", hide_index=True)
