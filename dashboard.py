@@ -228,11 +228,17 @@ import streamlit.components.v1 as components
 if st.button("🔄 Odśwież dane"):
     st.rerun()
 
-# --- LICZNIK ODŚWIEŻANIA (Bezpieczny komponent HTML/JS) ---
-# --- LICZNIK ODŚWIEŻANIA ---
-interval_sec = 60 if pump_running else 300
+# --- AUTO-ODŚWIEŻANIE I LICZNIK ---
+from streamlit_autorefresh import st_autorefresh
 
-# W najnowszych wersjach Streamlit można użyć bezpośrednio st.html
+# 1. Pobieramy interwał w sekundach i milisekundach
+interval_sec = 60 if pump_running else 300
+interval_ms = interval_sec * 1000
+
+# 2. Autorefresh odświeża tylko stan aplikacji Streamlit w tle
+count = st_autorefresh(interval=interval_ms, limit=None, key="frefresher")
+
+# 3. Komponent JS odlicza czas do każdego powiadomienia ze Streamlit
 st.html(
     f"""
     <div style="font-family: sans-serif; font-size: 0.85em; color: #aaa; text-align: center; margin-top: 0px;">
@@ -240,6 +246,7 @@ st.html(
     </div>
 
     <script>
+        // Przy każdym wyrenderowaniu (czyli co cykl st_autorefresh) licznik startuje od nowa
         var timeLeft = {interval_sec};
         var timerElement = document.getElementById('countdown_timer');
 
