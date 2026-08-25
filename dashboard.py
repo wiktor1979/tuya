@@ -229,10 +229,11 @@ if st.button("🔄 Odśwież dane"):
     st.rerun()
 
 # --- LICZNIK ODŚWIEŻANIA (Bezpieczny komponent HTML/JS) ---
+# --- LICZNIK ODŚWIEŻANIA ---
 interval_sec = 60 if pump_running else 300
 
-# Komponent HTML + JS uruchamiany w bezpiecznym kontenerze iframe
-components.html(
+# W najnowszych wersjach Streamlit można użyć bezpośrednio st.html
+st.html(
     f"""
     <div style="font-family: sans-serif; font-size: 0.85em; color: #aaa; text-align: center; margin-top: 0px;">
         Następne odświeżenie za: <span id="countdown_timer" style="font-weight: bold; color: #4CAF50;">{interval_sec}</span> s
@@ -242,7 +243,6 @@ components.html(
         var timeLeft = {interval_sec};
         var timerElement = document.getElementById('countdown_timer');
 
-        // Czyszczenie ewentualnego poprzedniego interwału
         if (window.timerId) {{
             clearInterval(window.timerId);
         }}
@@ -257,8 +257,7 @@ components.html(
             }}
         }}, 1000);
     </script>
-    """,
-    height=35,
+    """
 )
     
 # Sprawdź czy wybrano zakres "1 dzień" - wtedy pobierz dane od 00:00 do teraz
