@@ -62,7 +62,7 @@ HISTERESIS_CONFIG = {
     "tank_temp":      {"active": 0.3, "idle": 0.5, "last_value": None},
 
     # Temperatury otoczenia i wewnętrzne
-    "amb_temp":       {"active": 0.5, "idle": 0.5, "last_value": None},
+    "amb_temp":       {"active": 0.5, "idle": 0.8, "last_value": None},
     "tidr":           {"active": 0.5, "idle": 0.5, "last_value": None},  # Dodano: redukuje szum o ~97%
 
     # Temperatury układu chłodniczego
