@@ -244,7 +244,7 @@ if st.button("🔄 Odśwież dane"):
     st.markdown(
         f"""
         <div style="font-size: 0.85em; color: #666; margin-top: -15px; margin-bottom: 10px; text-align: center;">
-            Następne odświeżenie za: <span id="{timer_id}">{interval_sec}</span> s
+            Następne odświeżenie za: <span id="{timer_id}">{interval_sec}</span>
         </div>
         <script>
             // Usuń poprzedni timer dla tego ID, jeśli istnieje
