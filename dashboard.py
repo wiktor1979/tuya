@@ -223,46 +223,44 @@ def load_manual_readings() -> pd.DataFrame:
 
 # --- POPRAWIONY FRAGMENT KODU ---
 
+import streamlit.components.v1 as components
+
 if st.button("🔄 Odśwież dane"):
     st.rerun()
 
-# --- LICZNIK ODŚWIEŻANIA (Kod na głównym poziomie wcięć) ---
-# Używamy pobranej wcześniej zmiennej pump_running
+# --- LICZNIK ODŚWIEŻANIA (Bezpieczny komponent HTML/JS) ---
 interval_sec = 60 if pump_running else 300
 
-# Unikalny ID dla tego konkretnego licznika
-timer_id = f"timer_{int(interval_sec)}"
-
-st.markdown(
+# Komponent HTML + JS uruchamiany w bezpiecznym kontenerze iframe
+components.html(
     f"""
-    <div style="font-size: 0.85em; color: #666; margin-top: -15px; margin-bottom: 10px; text-align: center;">
-        Następne odświeżenie za: <span id="{timer_id}">{interval_sec}</span> s
+    <div style="font-family: sans-serif; font-size: 0.85em; color: #aaa; text-align: center; margin-top: 0px;">
+        Następne odświeżenie za: <span id="countdown_timer" style="font-weight: bold; color: #4CAF50;">{interval_sec}</span> s
     </div>
-    <script>
-        if (window.timerIntervals && window.timerIntervals['{timer_id}']) {{
-            clearInterval(window.timerIntervals['{timer_id}']);
-        }}
-        if (!window.timerIntervals) window.timerIntervals = {{}};
 
+    <script>
         var timeLeft = {interval_sec};
-        var el = document.getElementById('{timer_id}');
-        
-        if (el) {{
-            window.timerIntervals['{timer_id}'] = setInterval(function() {{
-                timeLeft--;
-                if (timeLeft <= 0) {{
-                    clearInterval(window.timerIntervals['{timer_id}']);
-                    el.innerHTML = "0";
-                }} else {{
-                    el.innerHTML = timeLeft;
-                }}
-            }}, 1000);
+        var timerElement = document.getElementById('countdown_timer');
+
+        // Czyszczenie ewentualnego poprzedniego interwału
+        if (window.timerId) {{
+            clearInterval(window.timerId);
         }}
+
+        window.timerId = setInterval(function() {{
+            timeLeft--;
+            if (timeLeft <= 0) {{
+                clearInterval(window.timerId);
+                timerElement.innerHTML = "0";
+            }} else {{
+                timerElement.innerHTML = timeLeft;
+            }}
+        }}, 1000);
     </script>
     """,
-    unsafe_allow_html=True
+    height=35,
 )
-
+    
 # Sprawdź czy wybrano zakres "1 dzień" - wtedy pobierz dane od 00:00 do teraz
 is_today_range = (selected_range == "1 dzień")
 df = load_pump_data(hours_back, is_today=is_today_range)
