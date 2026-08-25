@@ -229,40 +229,64 @@ if st.button("🔄 Odśwież dane"):
 from streamlit_autorefresh import st_autorefresh
 
 # --- LICZNIK I AUTO-ODŚWIEŻANIE ---
-# Używamy wyliczonego wcześniej interwału
 interval_sec = 60 if pump_running else 300
 interval_ms = interval_sec * 1000
 
-# Wywołujemy st_autorefresh TYLKO RAZ w całym kodzie.
-# Dynamiczny key zapobiega konfliktom przy zmianie częstotliwości (60s / 300s).
+# Wywołanie auto-odświeżania Streamlit
 count = st_autorefresh(interval=interval_ms, limit=None, key=f"frefresher_{interval_sec}")
 
-# Komponent odliczający czas w przeglądarce
-st.html(
+# Komponent odliczający w wyizolowanym iframe
+components.html(
     f"""
-    <div style="font-family: sans-serif; font-size: 0.85em; color: #aaa; text-align: center; margin-top: 0px;">
-        Następne odświeżenie za: <span id="countdown_timer" style="font-weight: bold; color: #4CAF50;">{interval_sec}</span> s
-    </div>
-
-    <script>
-        var timeLeft = {interval_sec};
-        var timerElement = document.getElementById('countdown_timer');
-
-        if (window.timerId) {{
-            clearInterval(window.timerId);
-        }}
-
-        window.timerId = setInterval(function() {{
-            timeLeft--;
-            if (timeLeft <= 0) {{
-                clearInterval(window.timerId);
-                timerElement.innerHTML = "0";
-            }} else {{
-                timerElement.innerHTML = timeLeft;
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {{
+                margin: 0;
+                padding: 0;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                background-color: transparent;
+                display: flex;
+                justify-content: center;
+                align-items: center;
             }}
-        }}, 1000);
-    </script>
-    """
+            .timer-container {{
+                font-size: 0.85em;
+                color: #aaa;
+                text-align: center;
+            }}
+            .timer-val {{
+                font-weight: bold;
+                color: #4CAF50;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="timer-container">
+            Następne odświeżenie za: <span id="countdown" class="timer-val">{interval_sec}</span> s
+        </div>
+
+        <script>
+            (function() {{
+                let timeLeft = {interval_sec};
+                const display = document.getElementById('countdown');
+                
+                const interval = setInterval(() => {{
+                    timeLeft--;
+                    if (timeLeft <= 0) {{
+                        clearInterval(interval);
+                        display.textContent = "0";
+                    }} else {{
+                        display.textContent = timeLeft;
+                    }}
+                }}, 1000);
+            }})();
+        </script>
+    </body>
+    </html>
+    """,
+    height=30
 )
     
 # Sprawdź czy wybrano zakres "1 dzień" - wtedy pobierz dane od 00:00 do teraz
