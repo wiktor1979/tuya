@@ -48,8 +48,14 @@ def _render_advanced_diagnostics(df_pivot: pd.DataFrame, report: DiagnosticRepor
         inv = report.inverter_analysis
         diag_col2.metric("Śr. częstotliwość sprężarki", f"{inv.avg_frequency:.1f} Hz")
         diag_col2.metric("Stabilność pracy", f"{inv.stability_score:.0f}/100")
-        if inv.frequent_starts > 10:
-            diag_col2.warning(f"Częste starty: {inv.frequent_starts}")
+        # Próg frequent_starts z analytics zależy od zakresu — pokazuj tylko jeśli >6/dzień
+        if not df_pivot.empty and 'czas' in df_pivot.columns:
+            days_span = max((df_pivot['czas'].max() - df_pivot['czas'].min()).total_seconds() / 86400, 1)
+        else:
+            days_span = 1
+        starts_per_day_inv = inv.frequent_starts / days_span
+        if starts_per_day_inv > 12:
+            diag_col2.warning(f"Częste starty: {inv.frequent_starts} ({starts_per_day_inv:.1f}/dzień)")
 
     # Analiza trybów
     if report.mode_analysis:
@@ -153,11 +159,20 @@ def _render_standard_diagnostics(df_pivot: pd.DataFrame, daily_df_all: pd.DataFr
 
     is_comp_on = df_pivot["comp_freq"] > 5
     starts_count = (is_comp_on & (~is_comp_on.shift(1, fill_value=False))).sum()
+    
+    # Oblicz liczbę dni w zakresie danych
+    if not df_pivot.empty and 'czas' in df_pivot.columns:
+        time_span_days = max((df_pivot['czas'].max() - df_pivot['czas'].min()).total_seconds() / 86400, 1)
+    else:
+        time_span_days = 1
+    starts_per_day = starts_count / time_span_days
+    
     with col_a3:
-        if starts_count > 15:
-            st.warning(f"🟡 **Wykryto taktowanie!** Starty: **{starts_count}**")
+        # Taktowanie = więcej niż 12 startów dziennie
+        if starts_per_day > 12:
+            st.warning(f"🟡 **Wykryto taktowanie!** Starty: **{starts_count}** ({starts_per_day:.1f}/dzień)")
         else:
-            st.success(f"🟢 **Cykliczność w normie:** Starty: **{starts_count}**")
+            st.success(f"🟢 **Cykliczność w normie:** Starty: **{starts_count}** ({starts_per_day:.1f}/dzień)")
 
     st.markdown("---")
     st.subheader("📊 Tabela: Statystyki dzienne pracy sprężarki")

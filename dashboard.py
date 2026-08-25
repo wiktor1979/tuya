@@ -45,17 +45,27 @@ count = st_autorefresh(interval=interval_ms, limit=None, key=f"refresher_{interv
 
 status_color = "#4CAF50" if pump_running else "#888"
 status_text = "Pompa pracuje — odświeżanie co 1 min" if pump_running else "Pompa stoi — odświeżanie co 5 min"
-st.html(
+st.markdown(
     f"""
-    <div style="text-align:center;font-size:0.85em;color:#aaa;font-family:sans-serif;">
+    <div style="text-align:center;font-size:0.85em;color:#aaa;font-family:sans-serif;margin-bottom:1rem;">
         Następne odświeżenie za: <span id="cd" style="font-weight:bold;color:#4CAF50;">{interval_sec}</span> s
         <span style="font-size:0.75em;margin-left:8px;color:{status_color};">{status_text}</span>
     </div>
     <script>
-    (function(){{let t={interval_sec};const d=document.getElementById('cd');
-    const i=setInterval(()=>{{t--;if(t<=0){{clearInterval(i);d.textContent="0";}}else{{d.textContent=t;}}}},1000);}})();
+    (function(){{
+        let t={interval_sec};
+        const d=document.getElementById('cd');
+        if(d){{
+            const i=setInterval(()=>{{
+                t--;
+                if(t<=0){{clearInterval(i);d.textContent="0";}}
+                else{{d.textContent=t;}}
+            }},1000);
+        }}
+    }})();
     </script>
-    """
+    """,
+    unsafe_allow_html=True
 )
 
 # --- ŁADOWANIE DANYCH ---

@@ -243,8 +243,8 @@ def analyze_inverter_performance(df: pd.DataFrame) -> InverterAnalysis:
     
     # Liczba startów ze stanu 0 lub bliskiego 0
     df_sorted = df.sort_values('czas')
-    df_sorted['freq_was_zero'] = df_sorted['comp_freq'].shift(1).fillna(0) <= 1
-    df_sorted['freq_now_active'] = df_sorted['comp_freq'] >= 10
+    df_sorted['freq_was_zero'] = df_sorted['comp_freq'].shift(1).fillna(0) <= 5
+    df_sorted['freq_now_active'] = df_sorted['comp_freq'] > 5
     frequent_starts = (df_sorted['freq_was_zero'] & df_sorted['freq_now_active']).sum()
     
     # Modulation efficiency: jak często inwerter pracuje w zakresie vs on/off
