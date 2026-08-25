@@ -75,7 +75,7 @@ HISTERESIS_CONFIG = {
 
     # Praca układu mechanicznego
     "comp_freq":      {"active": 2.0, "idle": 1.0, "last_value": None},  # Krok modulacji sprężarki
-    "flow_rate":      {"active": 1.0, "idle": 1.0, "last_value": None},
+    "flow_rate":      {"active": 2.0, "idle": 1.0, "last_value": None},
     "dc_fan1":        {"active": 15.0, "idle": 50.0, "last_value": None}, # Rzeczywisty zakres 0-840 RPM
     "dc_fan2":        {"active": 50.0, "idle": 50.0, "last_value": None}, # Rzeczywisty zakres 0-840 RPM
     
