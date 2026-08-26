@@ -49,8 +49,8 @@ Projekt został poddany refaktoryzacji zgodnie z zasadą pojedynczej odpowiedzia
 - **models/** - Definicje struktur danych (dataclasses)
 - **services/** - Logika biznesowa podzielona na niezależne moduły:
   - `database.py` - Operacje CRUD na SQLite z connection pooling, trybem WAL i optymalnymi indeksami
-  - `data_loader.py` - Zapytania SQL i przetwarzanie danych dla dashboardu (COP, SCOP, energia, statystyki dzienne)
-  - `tuya_client.py` - Komunikacja z Tuya Pulsar, deszyfrowanie AES-GCM/ECB, filtr deadband z `__slots__`
+  - `data_loader.py` - Zapytania SQL i przetwarzanie danych dla dashboardu (COP, SCOP nominalny/realny, energia, straty defrostu, statystyki dzienne)
+  - `tuya_client.py` - Komunikacja z Tuya Pulsar, deszyfrowanie AES-GCM/ECB, filtr deadband z dynamiczną histerezą
   - `calculator.py` - Obliczenia wydajności (COP, SCOP, energia)
   - `exporter.py` - Eksport danych do CSV
   - `analytics.py` - Zaawansowana diagnostyka: wykrywanie cykli krótkich, analiza inwertera, szacowanie COP, korelacja pogodowa
@@ -58,12 +58,12 @@ Projekt został poddany refaktoryzacji zgodnie z zasadą pojedynczej odpowiedzia
   - `styles.py` - CSS, stałe wizualne, metadane parametrów (PARAM_INFO)
   - `sidebar.py` - Panel boczny z konfiguracją (zakres czasu, kalibracja, koszty)
   - `tab_main.py` - Bieżące metryki i wykresy parametrów
-  - `tab_scop.py` - Bilans energetyczny, SCOP, statystyki dzienne
+  - `tab_scop.py` - Bilans energetyczny, SCOP nominalny vs realny (z defrostem), straty defrostu, statystyki dzienne
   - `tab_diagnostics.py` - Diagnostyka: cykle krótkie, inwerter, ostrzeżenia
   - `tab_weather.py` - Korelacja pogodowa, porównanie źródeł temperatury
   - `tab_meter.py` - Ręczne odczyty fizycznego licznika energii
   - `tab_export.py` - Eksport danych do CSV
-- **dashboard.py** - Lekki orkiestrator (~140 linii): ładuje dane, konfiguruje stronę, deleguje do zakładek
+- **dashboard.py** - Lekki orkiestrator (~140 linii): ładuje dane, konfiguruje stronę, deleguje do zakładek. Auto-odświeżanie z countdown (60s pompa aktywna / 300s idle)
 - **db.py** - Warstwa kompatybilności dla istniejących importów
 - **main.py** - Główny skrypt zbieracza z wątkiem pogodowym (Open-Meteo API)
 
@@ -77,6 +77,27 @@ Projekt został poddany refaktoryzacji zgodnie z zasadą pojedynczej odpowiedzia
   - `idx_time_desc` - dla zapytań sortowanych malejąco po czasie
 - **Kontekst menedżer**: Automatyczne commit/zamykanie kursorów
 - **`__slots__`**: Redukcja zużycia pamięci o ~40-50% w filtrze deadband
+
+### Dynamiczna histereza deadband
+
+Filtr zapisu do bazy (`DeadbandFilter`) redukuje liczbę rekordów bez utraty istotnych zmian:
+
+- **Dwa progi na parametr**: `active` (sprężarka pracuje) i `idle` (sprężarka stoi) — wyższy próg w idle redukuje szum przy zachowaniu dokładności w trybie aktywnym
+- **Heartbeat**: Wymusza zapis co 5 min nawet bez zmian (gwarantuje ciągłość danych)
+- **Konfiguracja w `config.py`**: Np. `out_water_temp: active=0.2°C, idle=0.5°C`, `ac_vol: active=2V, idle=3V`
+- **~300 rekordów/h** przy typowej pracy (zbalansowane między dokładnością a rozmiarem bazy)
+
+### SCOP realny z defrostem
+
+Algorytm oblicza dwa warianty SCOP:
+
+- **SCOP nominalny**: Standardowe obliczenie E_th/E_el z wykluczeniem okresów defrostu (COP=NaN)
+- **SCOP realny**: Uwzględnia straty defrostu — ujemny P_th (ciepło zabrane z obiegu) obniża bilans cieplny
+
+Podczas defrostu (`defrost=True`):
+- Cykl chłodniczy się odwraca → ΔT < 0 → P_th < 0
+- Sprężarka nadal pobiera prąd (P_el > 0)
+- SCOP realny = (E_th_nominalny + E_th_defrost) / E_el_total
 
 ## Instalacja
 
@@ -143,7 +164,7 @@ streamlit run dashboard.py --server.port 8501
 
 Dashboard zawiera 6 zakładek:
 1. **Panel Główny** - Podstawowe metryki i status systemu
-2. **Bilans Energetyczny & SCOP** - Bilans energetyczny i zużycie
+2. **Bilans Energetyczny & SCOP** - SCOP nominalny vs realny (z defrostem), straty energetyczne defrostu, bilans energii CO/CWU, tabela dzienna
 3. **Diagnostyka Pompy** - Zaawansowana analiza: cykle krótkie, praca inwertera, czasy trybów, rekomendacje
 4. **Kontekst Pogodowy** - Korelacja temperatury zewnętrznej z pracą pompy, wykresy zależności
 5. **Fizyczny Licznik Energii** - Zarządzanie ręcznymi odczytami licznika
@@ -153,7 +174,7 @@ Dashboard zawiera 6 zakładek:
 
 Osobna podstrona dostępna z nawigacji bocznej, z 4 zakładkami opartymi o parametry monitoringowe wg kategorii:
 
-1. **🔋 Wydajność COP** - COP chwilowy w czasie (z progami referencyjnymi), scatter COP vs temp. zewnętrzna (trend lowess), bilans dobowy ciepło/energia, alerty spadku wydajności
+1. **🔋 Wydajność COP** - COP chwilowy w czasie (z progami referencyjnymi i progiem opłacalności SCOP 3.1), SCOP realny z defrostem, scatter COP vs temp. zewnętrzna (trend lowess), SCOP dzienny (realny vs nominalny) z kolorowaniem wg progu opłacalności, alerty spadku wydajności
 2. **💧 Hydraulika i ΔT** - Delta T zasilanie-powrót z zakresami normy (3-7°C CO, 5-10°C CWU), wykres przepływu, korelacja ΔT vs przepływ, alerty hydrauliczne
 3. **⚙️ Sprężarka i Taktowanie** - Timeline ON/OFF z czasami cykli, histogram długości cykli (progi 30/60 min), starty/dobę (próg 15/20), modulacja częstotliwości
 4. **❄️ Defrost i Obieg Chłodniczy** - Timeline defrostów, scatter defrost vs temp. zewn., odstępy między cyklami (próg 45 min), zawór EEV (m_eev/a_eev), wentylator DC Fan 1
@@ -204,9 +225,11 @@ LOCATION_NAME="Łódź"  # Nazwa lokalizacji
 - ✅ Filtr Deadband (redukcja szumu, zoptymalizowany z `__slots__`)
 - ✅ Zapis do SQLite z indeksami i connection poolingiem
 - ✅ Ręczne wpisy licznika energii
-- ✅ Obliczanie COP i SCOP (CO/CWU)
-- ✅ Bilans energetyczny [kWh]
-- ✅ Wykrywanie cykli defrost
+- ✅ Obliczanie COP i SCOP (CO/CWU) — nominalny i realny (z defrostem)
+- ✅ Bilans energetyczny [kWh] z wyodrębnieniem strat defrostu
+- ✅ Próg opłacalności SCOP 3.1 — wizualizacja na wykresach i KPI
+- ✅ Wykrywanie cykli defrost i obliczanie strat cieplnych/elektrycznych
+- ✅ Auto-odświeżanie dashboardu z countdown (60s aktywna / 300s idle)
 - ✅ Eksport danych do CSV
 - ✅ Dashboard Streamlit z wykresami Plotly
 - ✅ Multipage Streamlit — oddzielna podstrona "Analiza Parametrów"

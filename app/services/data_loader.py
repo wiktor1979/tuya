@@ -169,12 +169,27 @@ def process_telemetry(
     correction_kw = (standby_power_w / 1000.0) + np.where(is_active, active_power_w / 1000.0, 0.0)
 
     df_pivot["P_el_kw"] = raw_p_el_kw + correction_kw
-    df_pivot["P_th_kw"] = (df_pivot["flow_m3h"] * 4.186 * df_pivot["delta_t"]) / 3.6
+    df_pivot["P_th_kw_raw"] = (df_pivot["flow_m3h"] * 4.186 * df_pivot["delta_t"]) / 3.6
+
+    # Wykrywanie defrostu — PRZED zerowaniem ujemnych P_th
+    df_pivot["defrost_num"] = df_pivot["defrost"].fillna(0).apply(lambda x: 1 if x else 0)
+    is_defrost = df_pivot["defrost_num"] == 1
+
+    # P_th do obliczeń COP/SCOP nominalnego — ujemne zerowane (jak dotychczas)
+    df_pivot["P_th_kw"] = df_pivot["P_th_kw_raw"].copy()
+    df_pivot.loc[df_pivot["P_th_kw"] < 0, "P_th_kw"] = 0.0
+
+    # Straty defrostu — ujemny P_th podczas defrostu = ciepło zabrane z obiegu
+    # P_th_defrost_kw < 0 oznacza stratę (pompa pobiera ciepło zamiast oddawać)
+    df_pivot["P_th_defrost_kw"] = np.where(
+        is_defrost & (df_pivot["P_th_kw_raw"] < 0),
+        df_pivot["P_th_kw_raw"],  # wartość ujemna = strata
+        0.0
+    )
 
     df_pivot["COP"] = np.where(is_active, df_pivot["P_th_kw"] / df_pivot["P_el_kw"], np.nan)
     invalid_mask = (df_pivot["P_th_kw"] <= 0) | (df_pivot["COP"] < 0.5) | (df_pivot["COP"] > 10.0)
     df_pivot.loc[invalid_mask, "COP"] = np.nan
-    df_pivot.loc[df_pivot["P_th_kw"] < 0, "P_th_kw"] = 0.0
 
     # Obliczenie energii
     df_pivot["dt_hours"] = df_pivot["czas"].diff().dt.total_seconds().fillna(0) / 3600.0
@@ -182,12 +197,18 @@ def process_telemetry(
     if resample_rule:
         df_pivot["E_th_kwh"] = df_pivot["P_th_kw"] * df_pivot["dt_hours"]
         df_pivot["E_el_kwh"] = df_pivot["P_el_kw"] * df_pivot["dt_hours"]
+        df_pivot["E_th_defrost_kwh"] = df_pivot["P_th_defrost_kw"] * df_pivot["dt_hours"]
+        df_pivot["E_el_defrost_kwh"] = np.where(is_defrost, df_pivot["P_el_kw"] * df_pivot["dt_hours"], 0.0)
     else:
         df_pivot["E_th_kwh"] = df_pivot["P_th_kw"].shift(1).fillna(0) * df_pivot["dt_hours"]
         df_pivot["E_el_kwh"] = df_pivot["P_el_kw"].shift(1).fillna(0) * df_pivot["dt_hours"]
+        df_pivot["E_th_defrost_kwh"] = df_pivot["P_th_defrost_kw"].shift(1).fillna(0) * df_pivot["dt_hours"]
+        defrost_shifted = is_defrost.shift(1).fillna(False)
+        df_pivot["E_el_defrost_kwh"] = np.where(
+            defrost_shifted, df_pivot["P_el_kw"].shift(1).fillna(0) * df_pivot["dt_hours"], 0.0
+        )
 
-    # Wykrywanie cykli defrost i startów sprężarki
-    df_pivot["defrost_num"] = df_pivot["defrost"].fillna(0).apply(lambda x: 1 if x else 0)
+    # Starty defrostu i sprężarki
     df_pivot["defrost_start"] = ((df_pivot["defrost_num"] == 1) & (df_pivot["defrost_num"].shift(1, fill_value=0) == 0)).astype(int)
     df_pivot["comp_on"] = (df_pivot["comp_freq"] > 5).astype(int)
     df_pivot["comp_start"] = ((df_pivot["comp_on"] == 1) & (df_pivot["comp_on"].shift(1, fill_value=0) == 0)).astype(int)
@@ -208,12 +229,13 @@ def compute_daily_stats(df_pivot: pd.DataFrame, time_offset_hours: int) -> pd.Da
     if df_pivot is None or df_pivot.empty:
         return pd.DataFrame(columns=[
             "dzień", "E_el_co_row", "E_el_cwu_row", "E_th_co_row", "E_th_cwu_row",
-            "amb_temp", "defrost_start", "comp_start", "dt_hours_work"
+            "amb_temp", "defrost_start", "comp_start", "dt_hours_work",
+            "E_th_defrost_kwh", "E_el_defrost_kwh"
         ])
 
     df_pivot["dzień"] = df_pivot["czas"].dt.date
 
-    daily_df = df_pivot.groupby("dzień").agg({
+    agg_dict = {
         "E_el_co_row": "sum",
         "E_el_cwu_row": "sum",
         "E_th_co_row": "sum",
@@ -221,8 +243,15 @@ def compute_daily_stats(df_pivot: pd.DataFrame, time_offset_hours: int) -> pd.Da
         "amb_temp": "mean",
         "defrost_start": "sum",
         "comp_start": "sum",
-        "dt_hours_work": "sum"
-    }).reset_index()
+        "dt_hours_work": "sum",
+    }
+    # Dodaj kolumny defrostu jeśli istnieją
+    if "E_th_defrost_kwh" in df_pivot.columns:
+        agg_dict["E_th_defrost_kwh"] = "sum"
+    if "E_el_defrost_kwh" in df_pivot.columns:
+        agg_dict["E_el_defrost_kwh"] = "sum"
+
+    daily_df = df_pivot.groupby("dzień").agg(agg_dict).reset_index()
 
     if not daily_df.empty and 'dzień' in daily_df.columns:
         daily_df['dzień'] = pd.to_datetime(daily_df['dzień']).dt.date + pd.Timedelta(days=1 if time_offset_hours >= 12 else 0)
@@ -231,16 +260,27 @@ def compute_daily_stats(df_pivot: pd.DataFrame, time_offset_hours: int) -> pd.Da
     daily_df["E_th_total"] = daily_df["E_th_co_row"] + daily_df["E_th_cwu_row"]
     daily_df["SCOP_dzienny"] = np.where(daily_df["E_el_total"] > 0, daily_df["E_th_total"] / daily_df["E_el_total"], np.nan)
 
+    # SCOP realny dzienny (z defrostem)
+    if "E_th_defrost_kwh" not in daily_df.columns:
+        daily_df["E_th_defrost_kwh"] = 0.0
+    if "E_el_defrost_kwh" not in daily_df.columns:
+        daily_df["E_el_defrost_kwh"] = 0.0
+
+    e_th_real = daily_df["E_th_total"] + daily_df["E_th_defrost_kwh"]  # defrost jest ujemny
+    daily_df["SCOP_realny"] = np.where(daily_df["E_el_total"] > 0, e_th_real / daily_df["E_el_total"], np.nan)
+
     return daily_df
 
 
 def compute_scop_metrics(df_pivot: pd.DataFrame) -> dict:
-    """Oblicza metryki SCOP z przetworzonego DataFrame."""
+    """Oblicza metryki SCOP z przetworzonego DataFrame (nominalny i realny z defrostem)."""
     if df_pivot is None or df_pivot.empty:
         return {
             "e_el_co": 0.0, "e_el_cwu": 0.0, "e_th_co": 0.0, "e_th_cwu": 0.0,
             "e_th_total": 0.0, "e_el_total": 0.0,
             "scop_total": 0.0, "scop_co": 0.0, "scop_cwu": 0.0,
+            "e_th_defrost": 0.0, "e_el_defrost": 0.0,
+            "defrost_loss_pct": 0.0, "scop_real": 0.0,
         }
 
     co_mask = (df_pivot["Tryb"] == "CO") & (~df_pivot["COP"].isna())
@@ -258,11 +298,28 @@ def compute_scop_metrics(df_pivot: pd.DataFrame) -> dict:
     e_el_total = e_el_co + e_el_cwu
     scop_total = (e_th_total / e_el_total) if e_el_total > 0 else 0.0
 
+    # Straty defrostu
+    e_th_defrost = df_pivot["E_th_defrost_kwh"].sum() if "E_th_defrost_kwh" in df_pivot.columns else 0.0
+    e_el_defrost = df_pivot["E_el_defrost_kwh"].sum() if "E_el_defrost_kwh" in df_pivot.columns else 0.0
+
+    # SCOP realny: uwzględnia ciepło odebrane z obiegu (e_th_defrost < 0)
+    # i CAŁĄ energię elektryczną (łącznie z defrostem)
+    # Energia el. defrostu jest już zawarta w E_el_kwh — nie dodajemy jej podwójnie
+    # Ale E_th z defrostu nie jest w E_th (bo P_th jest zerowane) — dodajemy stratę
+    e_th_real = e_th_total + e_th_defrost  # e_th_defrost jest ujemne = obniża bilans cieplny
+    e_el_real = e_el_total  # E_el już zawiera defrost (sprężarka pracuje)
+    scop_real = (e_th_real / e_el_real) if e_el_real > 0 else 0.0
+
+    # Procentowa strata defrostu
+    defrost_loss_pct = (abs(e_th_defrost) / e_th_total * 100) if e_th_total > 0 else 0.0
+
     return {
         "e_el_co": e_el_co, "e_el_cwu": e_el_cwu,
         "e_th_co": e_th_co, "e_th_cwu": e_th_cwu,
         "e_th_total": e_th_total, "e_el_total": e_el_total,
         "scop_total": scop_total, "scop_co": scop_co, "scop_cwu": scop_cwu,
+        "e_th_defrost": e_th_defrost, "e_el_defrost": e_el_defrost,
+        "defrost_loss_pct": defrost_loss_pct, "scop_real": scop_real,
     }
 
 

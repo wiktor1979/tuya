@@ -124,21 +124,31 @@ with tab_cop:
     with col2:
         e_th = df_pivot["E_th_kwh"].sum() if safe_col(df_pivot, "E_th_kwh") else 0
         e_el = df_pivot["E_el_kwh"].sum() if safe_col(df_pivot, "E_el_kwh") else 0
-        scop_period = e_th / e_el if e_el > 0 else None
-        if scop_period is not None:
-            if scop_period >= 3.1:
+        e_th_defrost = df_pivot["E_th_defrost_kwh"].sum() if safe_col(df_pivot, "E_th_defrost_kwh") else 0
+        # SCOP realny uwzględniający straty defrostu
+        scop_real = (e_th + e_th_defrost) / e_el if e_el > 0 else None
+        scop_nom = e_th / e_el if e_el > 0 else None
+        if scop_real is not None:
+            if scop_real >= 3.1:
                 delta_text = f"✓ Opłacalny (próg 3.1)"
                 delta_color = "normal"
             else:
                 delta_text = f"✗ Poniżej progu 3.1"
                 delta_color = "inverse"
-            st.metric("SCOP (okres)", f"{scop_period:.2f}", delta=delta_text, delta_color=delta_color)
+            st.metric("SCOP Realny (okres)", f"{scop_real:.2f}", delta=delta_text, delta_color=delta_color,
+                      help="SCOP uwzględniający straty cieplne defrostu")
         else:
-            st.metric("SCOP (okres)", "—")
+            st.metric("SCOP Realny (okres)", "—")
     with col3:
         st.metric("Ciepło wygenerowane", f"{e_th:.1f} kWh")
     with col4:
-        st.metric("Energia zużyta", f"{e_el:.1f} kWh")
+        defrost_loss = abs(e_th_defrost)
+        if defrost_loss > 0.001:
+            st.metric("❄️ Strata defrostu", f"{defrost_loss:.3f} kWh",
+                      delta=f"{defrost_loss / e_th * 100:.1f}% ciepła" if e_th > 0 else None,
+                      delta_color="inverse")
+        else:
+            st.metric("Energia zużyta", f"{e_el:.1f} kWh")
 
     st.divider()
 
@@ -194,22 +204,34 @@ with tab_cop:
 
     with col_b:
         st.markdown("##### 📊 SCOP dzienny z progiem opłacalności")
-        if not daily_df.empty and "SCOP_dzienny" in daily_df.columns:
-            scop_valid = daily_df[daily_df["SCOP_dzienny"].notna()].copy()
+        scop_col = "SCOP_realny" if "SCOP_realny" in daily_df.columns else "SCOP_dzienny"
+        if not daily_df.empty and scop_col in daily_df.columns:
+            scop_valid = daily_df[daily_df[scop_col].notna()].copy()
             if not scop_valid.empty:
-                # Kolor słupka: zielony jeśli SCOP >= 3.1, czerwony jeśli poniżej
-                scop_valid["kolor"] = scop_valid["SCOP_dzienny"].apply(
+                # Kolor słupka: zielony jeśli SCOP realny >= 3.1, czerwony jeśli poniżej
+                scop_valid["kolor"] = scop_valid[scop_col].apply(
                     lambda x: "rgba(76,175,80,0.8)" if x >= 3.1 else "rgba(244,67,54,0.8)"
                 )
                 fig_scop_daily = go.Figure()
+                # Słupki SCOP realny
                 fig_scop_daily.add_trace(go.Bar(
                     x=scop_valid["dzień"].astype(str),
-                    y=scop_valid["SCOP_dzienny"],
-                    name="SCOP dzienny",
+                    y=scop_valid[scop_col],
+                    name="SCOP realny",
                     marker_color=scop_valid["kolor"].tolist(),
-                    text=scop_valid["SCOP_dzienny"].apply(lambda x: f"{x:.2f}"),
+                    text=scop_valid[scop_col].apply(lambda x: f"{x:.2f}"),
                     textposition="outside",
                 ))
+                # Linia SCOP nominalny (jeśli istnieje i różni się)
+                if "SCOP_dzienny" in scop_valid.columns and scop_col != "SCOP_dzienny":
+                    fig_scop_daily.add_trace(go.Scatter(
+                        x=scop_valid["dzień"].astype(str),
+                        y=scop_valid["SCOP_dzienny"],
+                        mode="markers+lines",
+                        name="SCOP nominalny",
+                        line=dict(color="rgba(150,150,150,0.6)", width=1, dash="dot"),
+                        marker=dict(size=5, color="rgba(150,150,150,0.6)"),
+                    ))
                 # Próg opłacalności
                 fig_scop_daily.add_hline(
                     y=3.1, line_dash="dash", line_color="#FF9800", line_width=2,
@@ -218,13 +240,12 @@ with tab_cop:
                 )
                 fig_scop_daily.update_layout(
                     yaxis_title="SCOP", height=350, margin=dict(t=20, b=40),
-                    yaxis=dict(range=[0, max(6, scop_valid["SCOP_dzienny"].max() * 1.3)]),
-                    showlegend=False,
+                    yaxis=dict(range=[0, max(6, scop_valid[scop_col].max() * 1.3)]),
                 )
                 st.plotly_chart(fig_scop_daily, use_container_width=True)
 
                 # Podsumowanie tekstowe
-                days_above = (scop_valid["SCOP_dzienny"] >= 3.1).sum()
+                days_above = (scop_valid[scop_col] >= 3.1).sum()
                 days_total = len(scop_valid)
                 if days_above == days_total:
                     st.success(f"✅ Wszystkie {days_total} dni powyżej progu opłacalności 3.1")
