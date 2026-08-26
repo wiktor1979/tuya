@@ -30,8 +30,10 @@ Aplikacja do monitorowania pompy ciepła z wykorzystaniem API Tuya Pulsar (EU) z
 │       ├── tab_weather.py        # Zakładka: Kontekst Pogodowy
 │       ├── tab_meter.py          # Zakładka: Fizyczny Licznik Energii
 │       └── tab_export.py         # Zakładka: Eksport Danych
+├── pages/                        # Podstrony Streamlit (multipage app)
+│   └── 2_Analiza_Parametrow.py   # Analiza Parametrów: COP, Hydraulika, Sprężarka, Defrost
 ├── main.py                       # Skrypt zbieracza danych (z wątkiem pogodowym)
-├── dashboard.py                  # Dashboard Streamlit — orkiestrator modułów UI
+├── dashboard.py                  # Dashboard Streamlit — strona główna (orkiestrator)
 ├── db.py                         # Warstwa kompatybilności wstecznej
 ├── requirements.txt              # Zależności Python
 ├── Dockerfile                    # Kontener Docker
@@ -147,6 +149,15 @@ Dashboard zawiera 6 zakładek:
 5. **Fizyczny Licznik Energii** - Zarządzanie ręcznymi odczytami licznika
 6. **Eksport Danych** - Eksport danych do CSV
 
+### Podstrona: Analiza Parametrów (multipage)
+
+Osobna podstrona dostępna z nawigacji bocznej, z 4 zakładkami opartymi o parametry monitoringowe wg kategorii:
+
+1. **🔋 Wydajność COP** - COP chwilowy w czasie (z progami referencyjnymi), scatter COP vs temp. zewnętrzna (trend lowess), bilans dobowy ciepło/energia, alerty spadku wydajności
+2. **💧 Hydraulika i ΔT** - Delta T zasilanie-powrót z zakresami normy (3-7°C CO, 5-10°C CWU), wykres przepływu, korelacja ΔT vs przepływ, alerty hydrauliczne
+3. **⚙️ Sprężarka i Taktowanie** - Timeline ON/OFF z czasami cykli, histogram długości cykli (progi 30/60 min), starty/dobę (próg 15/20), modulacja częstotliwości
+4. **❄️ Defrost i Obieg Chłodniczy** - Timeline defrostów, scatter defrost vs temp. zewn., odstępy między cyklami (próg 45 min), zawór EEV (m_eev/a_eev), wentylator DC Fan 1
+
 ### Docker
 ```bash
 docker build -t heat-pump-monitor .
@@ -198,6 +209,7 @@ LOCATION_NAME="Łódź"  # Nazwa lokalizacji
 - ✅ Wykrywanie cykli defrost
 - ✅ Eksport danych do CSV
 - ✅ Dashboard Streamlit z wykresami Plotly
+- ✅ Multipage Streamlit — oddzielna podstrona "Analiza Parametrów"
 
 ### Zaawansowana Diagnostyka
 - 🔍 **Wykrywanie cykli krótkich** - Analiza częstotliwości startów pompy
