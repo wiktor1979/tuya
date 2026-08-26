@@ -24,24 +24,31 @@ inject_css()
 # --- STATUS POMPY I AUTO-ODŚWIEŻANIE ---
 pump_running = get_pump_status_for_refresh()
 
+# Aktualizacja stanu pompy w sesji
 if "last_pump_running" not in st.session_state:
     st.session_state["last_pump_running"] = pump_running
-if st.session_state["last_pump_running"] != pump_running:
+
+# Wykrycie zmiany stanu pompy — wymuszenie rerun by zastosować nowy interwał
+pump_state_changed = st.session_state["last_pump_running"] != pump_running
+if pump_state_changed:
     st.session_state["last_pump_running"] = pump_running
 
-interval_sec = 60 if st.session_state["last_pump_running"] else 300
+interval_sec = 60 if pump_running else 300
 interval_ms = interval_sec * 1000
+
+# WAŻNE: st_autorefresh musi być jednym z pierwszych komponentów na stronie,
+# ze STAŁYM kluczem, żeby nie resetował się przy każdym rerun.
+# Interwał jest aktualizowany dynamicznie — Streamlit zaktualizuje props komponentu.
+count = st_autorefresh(interval=interval_ms, limit=None, key="auto_refresher")
 
 st.title("🔥 Panel Monitorowania i Diagnostyki Pompy Ciepła")
 
 # --- PANEL BOCZNY ---
 settings = render_sidebar()
 
-# --- PRZYCISK ODŚWIEŻANIA I TIMER ---
+# --- PRZYCISK ODŚWIEŻANIA I STATUS ---
 if st.button("🔄 Odśwież dane"):
     st.rerun()
-
-count = st_autorefresh(interval=interval_ms, limit=None, key=f"refresher_{interval_sec}")
 
 status_color = "#4CAF50" if pump_running else "#888"
 status_text = "Pompa pracuje — odświeżanie co 1 min" if pump_running else "Pompa stoi — odświeżanie co 5 min"
@@ -53,15 +60,30 @@ st.markdown(
     </div>
     <script>
     (function(){{
-        let t={interval_sec};
-        const d=document.getElementById('cd');
-        if(d){{
-            const i=setInterval(()=>{{
-                t--;
-                if(t<=0){{clearInterval(i);d.textContent="0";}}
-                else{{d.textContent=t;}}
-            }},1000);
-        }}
+        // Odczytujemy interwał i obliczamy ile czasu minęło od ostatniego odświeżenia
+        const INTERVAL_SEC = {interval_sec};
+        const d = document.getElementById('cd');
+        if (!d) return;
+
+        // Countdown startuje od pełnego interwału po każdym renderze strony (= po rerun)
+        let remaining = INTERVAL_SEC;
+        d.textContent = remaining;
+
+        const timer = setInterval(function() {{
+            remaining--;
+            if (remaining <= 0) {{
+                clearInterval(timer);
+                d.textContent = "0";
+                d.style.color = "#FF5722";
+            }} else {{
+                d.textContent = remaining;
+                if (remaining <= 10) {{
+                    d.style.color = "#FF9800";
+                }} else {{
+                    d.style.color = "#4CAF50";
+                }}
+            }}
+        }}, 1000);
     }})();
     </script>
     """,
