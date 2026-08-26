@@ -59,7 +59,7 @@ HISTERESIS_CONFIG = {
     # Temperatury hydrauliczne
     "out_water_temp": {"active": 2, "idle": 5, "last_value": None},
     "in_water_temp":  {"active": 2, "idle": 5, "last_value": None},
-    "tank_temp":      {"active": 3, "idle": 5, "last_value": None},
+    "tank_temp":      {"active": 2, "idle": 5, "last_value": None},
 
     # Temperatury otoczenia i wewnętrzne
     "amb_temp":       {"active": 5, "idle": 8, "last_value": None},
@@ -71,7 +71,7 @@ HISTERESIS_CONFIG = {
 
     # Energia i zasilanie
     "ac_curr":        {"active": 2.0, "idle": 5.0, "last_value": None},  # Skala x10 (2.0 = krok 0.2A)
-    "ac_vol":         {"active": 3.0, "idle": 5.0, "last_value": None},
+    "ac_vol":         {"active": 2.0, "idle": 3.0, "last_value": None},
 
     # Praca układu mechanicznego
     "comp_freq":      {"active": 2.0, "idle": 1.0, "last_value": None},  # Krok modulacji sprężarki

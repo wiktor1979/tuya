@@ -3,6 +3,8 @@ import pandas as pd
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
+import streamlit.components.v1 as components
+
 from app.services.data_loader import (
     get_pump_status_for_refresh,
     load_pump_data,
@@ -52,24 +54,19 @@ if st.button("🔄 Odśwież dane"):
 
 status_color = "#4CAF50" if pump_running else "#888"
 status_text = "Pompa pracuje — odświeżanie co 1 min" if pump_running else "Pompa stoi — odświeżanie co 5 min"
-st.markdown(
+components.html(
     f"""
-    <div style="text-align:center;font-size:0.85em;color:#aaa;font-family:sans-serif;margin-bottom:1rem;">
+    <div style="text-align:center;font-size:0.85em;color:#aaa;font-family:sans-serif;">
         Następne odświeżenie za: <span id="cd" style="font-weight:bold;color:#4CAF50;">{interval_sec}</span> s
         <span style="font-size:0.75em;margin-left:8px;color:{status_color};">{status_text}</span>
     </div>
     <script>
     (function(){{
-        // Odczytujemy interwał i obliczamy ile czasu minęło od ostatniego odświeżenia
-        const INTERVAL_SEC = {interval_sec};
-        const d = document.getElementById('cd');
+        var remaining = {interval_sec};
+        var d = document.getElementById('cd');
         if (!d) return;
-
-        // Countdown startuje od pełnego interwału po każdym renderze strony (= po rerun)
-        let remaining = INTERVAL_SEC;
         d.textContent = remaining;
-
-        const timer = setInterval(function() {{
+        var timer = setInterval(function() {{
             remaining--;
             if (remaining <= 0) {{
                 clearInterval(timer);
@@ -77,17 +74,13 @@ st.markdown(
                 d.style.color = "#FF5722";
             }} else {{
                 d.textContent = remaining;
-                if (remaining <= 10) {{
-                    d.style.color = "#FF9800";
-                }} else {{
-                    d.style.color = "#4CAF50";
-                }}
+                d.style.color = remaining <= 10 ? "#FF9800" : "#4CAF50";
             }}
         }}, 1000);
     }})();
     </script>
     """,
-    unsafe_allow_html=True
+    height=35,
 )
 
 # --- ŁADOWANIE DANYCH ---
