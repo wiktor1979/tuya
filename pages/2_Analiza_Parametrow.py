@@ -33,7 +33,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st_autorefresh(interval=interval_sec * 1000, limit=None, key=f"analysis_refresher_{interval_sec}")
+st_autorefresh(interval=interval_sec * 1000, limit=None, key="analysis_refresher")
 
 # --- PANEL BOCZNY ---
 settings = render_sidebar()
@@ -125,7 +125,16 @@ with tab_cop:
         e_th = df_pivot["E_th_kwh"].sum() if safe_col(df_pivot, "E_th_kwh") else 0
         e_el = df_pivot["E_el_kwh"].sum() if safe_col(df_pivot, "E_el_kwh") else 0
         scop_period = e_th / e_el if e_el > 0 else None
-        kpi_with_status("SCOP (okres)", scop_period, "", 3.0, 5.5)
+        if scop_period is not None:
+            if scop_period >= 3.1:
+                delta_text = f"✓ Opłacalny (próg 3.1)"
+                delta_color = "normal"
+            else:
+                delta_text = f"✗ Poniżej progu 3.1"
+                delta_color = "inverse"
+            st.metric("SCOP (okres)", f"{scop_period:.2f}", delta=delta_text, delta_color=delta_color)
+        else:
+            st.metric("SCOP (okres)", "—")
     with col3:
         st.metric("Ciepło wygenerowane", f"{e_th:.1f} kWh")
     with col4:
@@ -146,6 +155,9 @@ with tab_cop:
         # Progi referencyjne
         fig_cop.add_hline(y=4.2, line_dash="dash", line_color="rgba(76,175,80,0.5)",
                           annotation_text="Norma A7/W35 (4.2)")
+        fig_cop.add_hline(y=3.1, line_dash="dash", line_color="rgba(255,152,0,0.8)",
+                          annotation_text="⚡ Próg opłacalności (3.1)",
+                          annotation=dict(font_size=12, font_color="#FF9800"))
         fig_cop.add_hline(y=2.5, line_dash="dash", line_color="rgba(244,67,54,0.5)",
                           annotation_text="Min A-7/W35 (2.5)")
         fig_cop.update_layout(
@@ -181,24 +193,50 @@ with tab_cop:
             st.info("Brak danych do korelacji COP/temperatura.")
 
     with col_b:
-        st.markdown("##### 📊 Bilans dobowy — Ciepło vs Energia")
-        if not daily_df.empty and "E_th_total" in daily_df.columns:
-            fig_balance = go.Figure()
-            fig_balance.add_trace(go.Bar(
-                x=daily_df["dzień"].astype(str), y=daily_df["E_th_total"],
-                name="Ciepło (kWh)", marker_color="rgba(76,175,80,0.7)"
-            ))
-            fig_balance.add_trace(go.Bar(
-                x=daily_df["dzień"].astype(str), y=daily_df["E_el_total"],
-                name="Energia el. (kWh)", marker_color="rgba(244,67,54,0.7)"
-            ))
-            fig_balance.update_layout(
-                barmode="group", height=350, margin=dict(t=20, b=40),
-                yaxis_title="kWh",
-            )
-            st.plotly_chart(fig_balance, use_container_width=True)
+        st.markdown("##### 📊 SCOP dzienny z progiem opłacalności")
+        if not daily_df.empty and "SCOP_dzienny" in daily_df.columns:
+            scop_valid = daily_df[daily_df["SCOP_dzienny"].notna()].copy()
+            if not scop_valid.empty:
+                # Kolor słupka: zielony jeśli SCOP >= 3.1, czerwony jeśli poniżej
+                scop_valid["kolor"] = scop_valid["SCOP_dzienny"].apply(
+                    lambda x: "rgba(76,175,80,0.8)" if x >= 3.1 else "rgba(244,67,54,0.8)"
+                )
+                fig_scop_daily = go.Figure()
+                fig_scop_daily.add_trace(go.Bar(
+                    x=scop_valid["dzień"].astype(str),
+                    y=scop_valid["SCOP_dzienny"],
+                    name="SCOP dzienny",
+                    marker_color=scop_valid["kolor"].tolist(),
+                    text=scop_valid["SCOP_dzienny"].apply(lambda x: f"{x:.2f}"),
+                    textposition="outside",
+                ))
+                # Próg opłacalności
+                fig_scop_daily.add_hline(
+                    y=3.1, line_dash="dash", line_color="#FF9800", line_width=2,
+                    annotation_text="⚡ Próg opłacalności (3.1)",
+                    annotation=dict(font_size=12, font_color="#FF9800"),
+                )
+                fig_scop_daily.update_layout(
+                    yaxis_title="SCOP", height=350, margin=dict(t=20, b=40),
+                    yaxis=dict(range=[0, max(6, scop_valid["SCOP_dzienny"].max() * 1.3)]),
+                    showlegend=False,
+                )
+                st.plotly_chart(fig_scop_daily, use_container_width=True)
+
+                # Podsumowanie tekstowe
+                days_above = (scop_valid["SCOP_dzienny"] >= 3.1).sum()
+                days_total = len(scop_valid)
+                if days_above == days_total:
+                    st.success(f"✅ Wszystkie {days_total} dni powyżej progu opłacalności 3.1")
+                else:
+                    st.warning(
+                        f"⚠️ {days_total - days_above} z {days_total} dni poniżej progu opłacalności 3.1 — "
+                        f"pompa w tych dniach jest mniej opłacalna niż ogrzewanie elektryczne."
+                    )
+            else:
+                st.info("Brak danych SCOP dziennego.")
         else:
-            st.info("Brak danych dziennych do bilansu.")
+            st.info("Brak danych dziennych do wykresu SCOP.")
 
     # --- Alerty COP ---
     if safe_col(df_pivot, "COP") and safe_col(df_pivot, "amb_temp"):
