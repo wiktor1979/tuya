@@ -6,6 +6,8 @@ import plotly.graph_objects as go
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
+import streamlit.components.v1 as components
+
 from app.services.data_loader import (
     get_pump_status_for_refresh,
     load_pump_data,
@@ -27,10 +29,33 @@ st.title("🔬 Analiza Parametrów Pompy Ciepła")
 
 status_color = "#4CAF50" if pump_running else "#888"
 status_text = "Pompa pracuje — odświeżanie co 1 min" if pump_running else "Pompa stoi — odświeżanie co 5 min"
-st.markdown(
-    f'<div style="text-align:center;font-size:0.85em;color:#aaa;margin-bottom:1rem;">'
-    f'<span style="color:{status_color};">● {status_text}</span></div>',
-    unsafe_allow_html=True,
+components.html(
+    f"""
+    <div style="text-align:center;font-size:0.85em;color:#aaa;font-family:sans-serif;">
+        Następne odświeżenie za: <span id="cd" style="font-weight:bold;color:#4CAF50;">{interval_sec}</span> s
+        <span style="font-size:0.75em;margin-left:8px;color:{status_color};">{status_text}</span>
+    </div>
+    <script>
+    (function(){{
+        var remaining = {interval_sec};
+        var d = document.getElementById('cd');
+        if (!d) return;
+        d.textContent = remaining;
+        var timer = setInterval(function() {{
+            remaining--;
+            if (remaining <= 0) {{
+                clearInterval(timer);
+                d.textContent = "0";
+                d.style.color = "#FF5722";
+            }} else {{
+                d.textContent = remaining;
+                d.style.color = remaining <= 10 ? "#FF9800" : "#4CAF50";
+            }}
+        }}, 1000);
+    }})();
+    </script>
+    """,
+    height=35,
 )
 
 st_autorefresh(interval=interval_sec * 1000, limit=None, key="analysis_refresher")
@@ -252,7 +277,7 @@ with tab_cop:
                 else:
                     st.warning(
                         f"⚠️ {days_total - days_above} z {days_total} dni poniżej progu opłacalności 3.1 — "
-                        f"pompa w tych dniach jest mniej opłacalna niż ogrzewanie elektryczne."
+                        f"pompa w tych dniach jest mniej opłacalna niż ogrzewanie gazowe."
                     )
             else:
                 st.info("Brak danych SCOP dziennego.")
