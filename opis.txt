@@ -1,0 +1,81 @@
+Najważniejsze w monitorowaniu pompy ciepła jest równoważenie **trzech filarów**: wydajności energetycznej (COP/SCOP), stabilności pracy mechanicznej (minimalizacja zużycia sprężarki) oraz prawidłowości wymiany ciepła.
+
+Oto kluczowe parametry podzielone wg kategorii, optymalnych częstotliwości pomiaru oraz zakresów wzorcowych.
+
+---
+
+### 1. Wydajność i Efektywność (COP & SCOP)
+
+Służą do oceny, jak skutecznie urządzenie przetwarza energię elektryczną na cieplną.
+
+* **COP chwilowy** (Moc cieplna wygenerowana / Moc elektryczna pobrana)
+* *Częstotliwość:* Ciągła (rejestracja co 1–5 minut).
+* *Norma:* Zależy od temperatury zewnętrznej i zasilania (np. dla A7/W35 wynosi zazwyczaj 4.2–4.8, przy A-7/W35 około 2.5–3.2).
+
+
+* **SCOP / JAZ (Sezonowy / Roczny współczynnik efektywności)**
+* *Częstotliwość:* Analiza miesięczna oraz sezonowa.
+* *Norma:* Sezonowo powyżej **3.5** dla ogrzewania podłogowego i powyżej **2.8–3.0** dla grzejników.
+
+
+* **Bilans wyprodukowanego ciepła do zużytej energii (kWh)**
+* *Częstotliwość:* Analiza dobowa i miesięczna.
+* *Na co zwrócić uwagę:* Nagłe spadki COP przy stałych temperaturach zewnętrznych sygnalizują problemy (np. ubytek czynnika, zanieczyszczony filtr, błędną krzywą grzewczą).
+
+
+
+---
+
+### 2. Hydraulika i Przepływy (Wymiana Ciepła)
+
+Niewłaściwy przepływ to najczęstsza przyczyna pracy sprężarki w ekstremalnych warunkach.
+
+| Parameter | Częstotliwość | Zakres prawidłowy / Wskaźnik |
+| --- | --- | --- |
+| **Delta T ($\Delta T$) na skraplaczu** (T_zasilania - T_powrotu) | Ciągła (co 1 min) | **3°C – 7°C** dla ogrzewania płaszczyznowego; **5°C – 10°C** dla grzejników. |
+| **Przepływ zasilania (L/min lub $m^3/h$)** | Ciągła | Stały, zgodny z wymaganiami producenta dla danej mocy nominalnej. |
+| **Ciśnienie w układzie CO** | 1x w miesiącu / automatyczny alarm | **1.2 – 2.0 bar** (spadek oznacza nieszczelność lub awarię naczynia wzbiorczego). |
+
+> **Wskazówka:** Jeśli $\Delta T$ rośnie powyżej 8–10°C przy ogrzewaniu podłogowym, przepływ jest za mały (np. zapchany filtr siatkowy lub uszkodzona pompa obiegowa). Jeśli wynosi poniżej 2°C, przepływ jest zbyt duży lub pompa przeregulowana.
+
+---
+
+### 3. Stabilność i Żywotność (Praca Sprężarki)
+
+Sprężarka zużywa się głównie podczas rozruchu. Celem jest unikanie tzw. *taktowania* (częstego włączania i wyłączania).
+
+* **Liczba uruchomień sprężarki (Starty) vs. Czas pracy (Godziny)**
+* *Częstotliwość:* Rejestracja dobowy/tygodniowa.
+* *Norma:* Średni czas jednego cyklu pracy powinien wynosić **minimum 30–45 minut** (idealnie > 60 minut).
+* *Wskaźnik:* Liczba cykli na dobę nie powinna przekraczać **15–20 taktom na dobę** w okresie przejściowym.
+
+
+* **Częstotliwość/Modulacja sprężarki (RPS / % mocy)**
+* *Częstotliwość:* Ciągła.
+* *Norma:* Liniowa, płynna zmiana. Częsta praca na 100% mocy przy łagodnych temperaturach wskazuje na błędy nastaw lub niedobór czynnika.
+
+
+
+---
+
+### 4. Obieg Chłodniczy i Odszranianie (Defrost)
+
+* **Liczba i czas trwania cykli Defrost**
+* *Częstotliwość:* Rejestracja ciągła (szczególnie w zakresie temp. -3°C do +5°C przy wysokiej wilgotności).
+* *Norma:* Cykl odszraniania trwa zazwyczaj **3–8 minut** i występuje nie częściej niż raz na 45–60 minut.
+* *Problem:* Defrosty co 15–20 minut oznaczają zablokowany parownik, problem z wentylatorem lub brak czynnika chłodniczego.
+
+
+* **Przegrzanie (Superheat) i Podchłodzenie (Subcooling)**
+* *Częstotliwość:* Podczas okresowych przeglądów serwisowych (lub zaawansowanego logowania czujników fabrycznych).
+* *Norma:* Stabilna wartość przegrzania (zwykle 3–8 K) świadczy o prawidłowej pracy zaworu rozprężnego (EEV).
+
+
+
+---
+
+### Okresy Analizy Danych (Jak często sprawdzać?)
+
+1. **Widok ciągły / alerty (Real-Time):** Stan awarii, ciśnienie CO, temperatury zasilania i powrotu, pobór mocy.
+2. **Analiza dobowa / tygodniowa:** Liczba cykli włączeń (taktowanie), czas trwania defrostów, dobowa efektywność COP.
+3. **Analiza miesięczna / sezonowa:** Wskaźnik JAZ/SCOP, zużycie energii w korelowaniu z stopnodniami (HDD - Heating Degree Days), zużycie energii przez grzałki szczytowe (powinno być bliskie 0 kWh w temp. powyżej bivalencji).

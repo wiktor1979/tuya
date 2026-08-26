@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Preview — Nowe zakładki dashboardu pompy ciepła</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1"></script>
+    <style>
+        :root {
+            --bg-primary: #0e1117;
+            --bg-card: #1a1d23;
+            --bg-tab: #262730;
+            --text-primary: #fafafa;
+            --text-secondary: #a3a8b8;
+            --accent-green: #4CAF50;
+            --accent-blue: #2196F3;
+            --accent-orange: #FF9800;
+            --accent-red: #f44336;
+            --accent-cyan: #00BCD4;
+            --accent-purple: #9C27B0;
+            --border: #333640;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 8px;
+            font-size: 1.8em;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: var(--text-secondary);
+            margin-bottom: 24px;
+            font-size: 0.9em;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 24px;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 0;
+            flex-wrap: wrap;
+        }
+
+        .tab-btn {
+            padding: 12px 20px;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 0.95em;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .tab-btn:hover {
+            color: var(--text-primary);
+            background: var(--bg-tab);
+        }
+
+        .tab-btn.active {
+            color: var(--accent-blue);
+            border-bottom-color: var(--accent-blue);
+            background: var(--bg-tab);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* KPI Cards */
+        .kpi-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .kpi-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+        }
+
+        .kpi-card .label {
+            font-size: 0.8em;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .kpi-card .value {
+            font-size: 2em;
+            font-weight: 700;
+        }
+
+        .kpi-card .unit {
+            font-size: 0.7em;
+            color: var(--text-secondary);
+            margin-left: 2px;
+        }
+
+        .kpi-card .status {
+            font-size: 0.75em;
+            margin-top: 4px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            display: inline-block;
+        }
+
+        .status-ok { background: rgba(76,175,80,0.2); color: var(--accent-green); }
+        .status-warn { background: rgba(255,152,0,0.2); color: var(--accent-orange); }
+        .status-bad { background: rgba(244,67,54,0.2); color: var(--accent-red); }
+
+        /* Chart containers */
+        .chart-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        .chart-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+        }
+
+        .chart-box h3 {
+            font-size: 0.95em;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+            font-weight: 500;
+        }
+
+        .chart-box canvas {
+            width: 100% !important;
+            max-height: 300px;
+        }
+
+        .chart-full {
+            grid-column: 1 / -1;
+        }
+
+        /* Alert box */
+        .alert-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-left: 4px solid var(--accent-orange);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 24px;
+        }
+
+        .alert-box h3 {
+            color: var(--accent-orange);
+            font-size: 0.9em;
+            margin-bottom: 8px;
+        }
+
+        .alert-box ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .alert-box li {
+            padding: 6px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.85em;
+            color: var(--text-secondary);
+        }
+
+        .alert-box li:last-child { border-bottom: none; }
+        .alert-box li::before { content: "⚠️ "; }
+
+        /* Timeline */
+        .timeline {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 24px;
+        }
+
+        .timeline h3 {
+            font-size: 0.95em;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+
+        .timeline-bar {
+            display: flex;
+            height: 30px;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .timeline-segment {
+            height: 100%;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.65em;
+            color: white;
+            font-weight: 500;
+        }
+
+        .seg-on { background: var(--accent-green); }
+        .seg-off { background: #333; }
+        .seg-defrost { background: var(--accent-cyan); }
+
+        .timeline-legend {
+            display: flex;
+            gap: 16px;
+            font-size: 0.8em;
+            color: var(--text-secondary);
+        }
+
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 4px;
+        }
+
+        /* Section header */
+        .section-header {
+            font-size: 1.1em;
+            color: var(--text-primary);
+            margin: 24px 0 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        @media (max-width: 768px) {
+            .chart-grid {
+                grid-template-columns: 1fr;
+            }
+            .kpi-row {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+
+<h1>🔥 Nowe Zakładki — Preview</h1>
+<p class="subtitle">Podgląd proponowanych zakładek monitorowania pompy ciepła (dummy dane)</p>
+
+<div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('cop')">🔋 Wydajność COP</button>
+    <button class="tab-btn" onclick="switchTab('hydraulics')">💧 Hydraulika i ΔT</button>
+    <button class="tab-btn" onclick="switchTab('compressor')">⚙️ Sprężarka i Taktowanie</button>
+    <button class="tab-btn" onclick="switchTab('defrost')">❄️ Defrost i Obieg Chłodniczy</button>
+</div>
+
+<!-- ==================== TAB 1: COP ==================== -->
+<div id="tab-cop" class="tab-content active">
+    <div class="kpi-row">
+        <div class="kpi-card">
+            <div class="label">COP Chwilowy</div>
+            <div class="value" style="color: var(--accent-green)">4.2</div>
+            <div class="status status-ok">✓ Norma (A7/W35: 4.2-4.8)</div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">SCOP Sezonowy</div>
+            <div class="value" style="color: var(--accent-blue)">3.8</div>
+            <div class="status status-ok">✓ Powyżej 3.5</div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">Ciepło wygenerowane (dziś)</div>
+            <div class="value">28.4<span class="unit">kWh</span></div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">Energia zużyta (dziś)</div>
+            <div class="value">7.1<span class="unit">kWh</span></div>
+        </div>
+    </div>
+
+    <div class="chart-grid">
+        <div class="chart-box chart-full">
+            <h3>📈 COP chwilowy w czasie</h3>
+            <canvas id="chart-cop-time"></canvas>
+        </div>
+        <div class="chart-box">
+            <h3>🌡️ COP vs Temperatura zewnętrzna</h3>
+            <canvas id="chart-cop-vs-temp"></canvas>
+        </div>
+        <div class="chart-box">
+            <h3>📊 Bilans dobowy — Ciepło vs Energia</h3>
+            <canvas id="chart-daily-balance"></canvas>
+        </div>
+    </div>
+
+    <div class="alert-box">
+        <h3>Alerty wydajności</h3>
+        <ul>
+            <li>24.08 14:32 — Spadek COP do 2.1 przy temp. zewn. 12°C (norma >3.5). Sprawdź przepływ i filtr.</li>
+            <li>23.08 06:15 — COP <2.5 przez 45 min przy -2°C — w normie dla niskich temperatur.</li>
+        </ul>
+    </div>
+</div>
+
+<!-- ==================== TAB 2: HYDRAULIKA ==================== -->
+<div id="tab-hydraulics" class="tab-content">
+    <div class="kpi-row">
+        <div class="kpi-card">
+            <div class="label">ΔT aktualny (CO)</div>
+            <div class="value" style="color: var(--accent-green)">4.8<span class="unit">°C</span></div>
+            <div class="status status-ok">✓ Norma CO: 3-7°C</div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">ΔT aktualny (CWU)</div>
+            <div class="value" style="color: var(--accent-orange)">9.2<span class="unit">°C</span></div>
+            <div class="status status-warn">⚠ Górna granica (5-10°C)</div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">Przepływ</div>
+            <div class="value">12.4<span class="unit">l/min</span></div>
+            <div class="status status-ok">✓ Stabilny</div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">Tryb aktualny</div>
+            <div class="value" style="color: var(--accent-cyan); font-size: 1.5em;">CO</div>
+            <div class="status" style="background: rgba(0,188,212,0.2); color: var(--accent-cyan);">Ogrzewanie</div>
+        </div>
+    </div>
+
+    <div class="chart-grid">
+        <div class="chart-box chart-full">
+            <h3>🌡️ ΔT w czasie — z zakresami prawidłowymi</h3>
+            <canvas id="chart-delta-t"></canvas>
+        </div>
+        <div class="chart-box">
+            <h3>💧 Przepływ w czasie</h3>
+            <canvas id="chart-flow"></canvas>
+        </div>
+        <div class="chart-box">
+            <h3>📉 Korelacja ΔT vs Przepływ</h3>
+            <canvas id="chart-dt-vs-flow"></canvas>
+        </div>
+    </div>
+
+    <div class="alert-box">
+        <h3>Alerty hydrauliki</h3>
+        <ul>
+            <li>24.08 09:12 — ΔT wzrosło do 9.8°C w trybie CO (max 7°C). Możliwy spadek przepływu — sprawdź filtr siatkowy.</li>
+            <li>23.08 22:40 — Przepływ spadł do 6.2 l/min (normalnie 12+). Krótkotrwałe — pompa obiegowa restart.</li>
+        </ul>
+    </div>
+</div>
+
+<!-- ==================== TAB 3: SPRĘŻARKA ==================== -->
+<div id="tab-compressor" class="tab-content">
+    <div class="kpi-row">
+        <div class="kpi-card">
+            <div class="label">Średni czas cyklu</div>
+            <div class="value" style="color: var(--accent-green)">68<span class="unit">min</span></div>
+            <div class="status status-ok">✓ Idealne (>60 min)</div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">Starty dziś</div>
+            <div class="value" style="color: var(--accent-blue)">8</div>
+            <div class="status status-ok">✓ OK (<15/dobę)</div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">Częstotliwość sprężarki</div>
+            <div class="value">62<span class="unit">Hz</span></div>
+            <div class="status" style="background: rgba(33,150,243,0.2); color: var(--accent-blue);">65% mocy</div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">Temp. tłoczenia</div>
+            <div class="value">58<span class="unit">°C</span></div>
+            <div class="status status-ok">✓ Norma</div>
+        </div>
+    </div>
+
+    <div class="timeline">
+        <h3>⏱️ Cykle pracy sprężarki (ostatnie 12h)</h3>
+        <div class="timeline-bar">
+            <div class="timeline-segment seg-off" style="width:5%"></div>
+            <div class="timeline-segment seg-on" style="width:18%">72 min</div>
+            <div class="timeline-segment seg-off" style="width:3%"></div>
+            <div class="timeline-segment seg-on" style="width:22%">85 min</div>
+            <div class="timeline-segment seg-off" style="width:4%"></div>
+            <div class="timeline-segment seg-on" style="width:15%">58 min</div>
+            <div class="timeline-segment seg-off" style="width:3%"></div>
+            <div class="timeline-segment seg-on" style="width:12%">45 min</div>
+            <div class="timeline-segment seg-off" style="width:2%"></div>
+            <div class="timeline-segment seg-on" style="width:16%">62 min</div>
+        </div>
+        <div class="timeline-legend">
+            <span><span class="legend-dot" style="background:var(--accent-green)"></span> Praca</span>
+            <span><span class="legend-dot" style="background:#333"></span> Postój</span>
+        </div>
+    </div>
+
+    <div class="chart-grid">
+        <div class="chart-box">
+            <h3>📊 Histogram długości cykli pracy</h3>
+            <canvas id="chart-cycle-hist"></canvas>
+        </div>
+        <div class="chart-box">
+            <h3>📈 Starty sprężarki na dobę</h3>
+            <canvas id="chart-starts-daily"></canvas>
+        </div>
+        <div class="chart-box chart-full">
+            <h3>⚡ Częstotliwość sprężarki (modulacja) w czasie</h3>
+            <canvas id="chart-comp-freq"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== TAB 4: DEFROST ==================== -->
+<div id="tab-defrost" class="tab-content">
+    <div class="kpi-row">
+        <div class="kpi-card">
+            <div class="label">Defrosty dziś</div>
+            <div class="value" style="color: var(--accent-cyan)">3</div>
+            <div class="status status-ok">✓ Norma</div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">Śr. czas defrostu</div>
+            <div class="value">5.2<span class="unit">min</span></div>
+            <div class="status status-ok">✓ 3-8 min</div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">Śr. odstęp między defrostami</div>
+            <div class="value" style="color: var(--accent-green)">72<span class="unit">min</span></div>
+            <div class="status status-ok">✓ >45 min</div>
+        </div>
+        <div class="kpi-card">
+            <div class="label">Zawór EEV (m_eev)</div>
+            <div class="value">480<span class="unit">kroków</span></div>
+            <div class="status status-ok">✓ Stabilny</div>
+        </div>
+    </div>
+
+    <div class="timeline">
+        <h3>❄️ Cykle defrost (ostatnie 12h)</h3>
+        <div class="timeline-bar">
+            <div class="timeline-segment seg-on" style="width:20%"></div>
+            <div class="timeline-segment seg-defrost" style="width:2%">5m</div>
+            <div class="timeline-segment seg-on" style="width:25%"></div>
+            <div class="timeline-segment seg-defrost" style="width:2%">6m</div>
+            <div class="timeline-segment seg-on" style="width:30%"></div>
+            <div class="timeline-segment seg-defrost" style="width:1.5%">4m</div>
+            <div class="timeline-segment seg-on" style="width:19.5%"></div>
+        </div>
+        <div class="timeline-legend">
+            <span><span class="legend-dot" style="background:var(--accent-green)"></span> Praca normalna</span>
+            <span><span class="legend-dot" style="background:var(--accent-cyan)"></span> Defrost</span>
+        </div>
+    </div>
+
+    <div class="chart-grid">
+        <div class="chart-box">
+            <h3>🌡️ Defrost vs Temperatura zewnętrzna</h3>
+            <canvas id="chart-defrost-temp"></canvas>
+        </div>
+        <div class="chart-box">
+            <h3>⏱️ Odstępy między cyklami defrost</h3>
+            <canvas id="chart-defrost-intervals"></canvas>
+        </div>
+        <div class="chart-box">
+            <h3>🔧 Zawór rozprężny EEV w czasie</h3>
+            <canvas id="chart-eev"></canvas>
+        </div>
+        <div class="chart-box">
+            <h3>🌀 Wentylator DC Fan 1 — status pracy</h3>
+            <canvas id="chart-fans"></canvas>
+        </div>
+    </div>
+
+    <div class="alert-box">
+        <h3>Alerty defrost</h3>
+        <ul>
+            <li>22.08 07:30 — 4 defrosty w ciągu 2h przy temp +3°C i wilg. 92%. Normalne dla mglistego poranka.</li>
+            <li>21.08 15:00 — Defrost trwający 12 min (norma 3-8 min). Możliwy problem z wentylatorem parownika.</li>
+        </ul>
+    </div>
+</div>
+
+<script>
+// ==================== TAB SWITCHING ====================
+function switchTab(tabId) {
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + tabId).classList.add('active');
+    event.target.classList.add('active');
+    // Force chart resize
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
+}
+
+// ==================== DUMMY DATA GENERATORS ====================
+function generateTimeLabels(hours, stepMin = 15) {
+    const labels = [];
+    const now = new Date(2026, 7, 24, 20, 0);
+    const start = new Date(now.getTime() - hours * 3600000);
+    for (let t = start; t <= now; t = new Date(t.getTime() + stepMin * 60000)) {
+        labels.push(t.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }));
+    }
+    return labels;
+}
+
+function generateData(n, min, max, smooth = true) {
+    const data = [];
+    let val = min + Math.random() * (max - min);
+    for (let i = 0; i < n; i++) {
+        if (smooth) {
+            val += (Math.random() - 0.5) * (max - min) * 0.1;
+            val = Math.max(min, Math.min(max, val));
+        } else {
+            val = min + Math.random() * (max - min);
+        }
+        data.push(parseFloat(val.toFixed(1)));
+    }
+    return data;
+}
+
+function generateScatterData(n, xMin, xMax, yMin, yMax, correlation = -0.5) {
+    const data = [];
+    for (let i = 0; i < n; i++) {
+        const x = xMin + Math.random() * (xMax - xMin);
+        const yBase = yMin + (1 - (x - xMin) / (xMax - xMin)) * (yMax - yMin) * (correlation < 0 ? 1 : -1);
+        const y = yBase + (Math.random() - 0.5) * (yMax - yMin) * 0.3;
+        data.push({ x: parseFloat(x.toFixed(1)), y: parseFloat(Math.max(yMin, Math.min(yMax, y)).toFixed(1)) });
+    }
+    return data;
+}
+
+// Chart.js defaults
+Chart.defaults.color = '#a3a8b8';
+Chart.defaults.borderColor = '#333640';
+Chart.defaults.font.family = "'Segoe UI', sans-serif";
+
+const timeLabels12h = generateTimeLabels(12, 15);
+const timeLabels24h = generateTimeLabels(24, 30);
+
+// ==================== TAB 1: COP CHARTS ====================
+// COP w czasie
+new Chart(document.getElementById('chart-cop-time'), {
+    type: 'line',
+    data: {
+        labels: timeLabels12h,
+        datasets: [{
+            label: 'COP',
+            data: generateData(timeLabels12h.length, 2.8, 5.2, true),
+            borderColor: '#4CAF50',
+            backgroundColor: 'rgba(76,175,80,0.1)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 0
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            annotation: {
+                annotations: {
+                    line1: {
+                        type: 'line',
+                        yMin: 2.5,
+                        yMax: 2.5,
+                        borderColor: 'rgba(244,67,54,0.5)',
+                        borderDash: [5, 5],
+                        label: { content: 'Min A-7/W35', display: true, position: 'start', font: { size: 10 } }
+                    },
+                    line2: {
+                        type: 'line',
+                        yMin: 4.2,
+                        yMax: 4.2,
+                        borderColor: 'rgba(76,175,80,0.5)',
+                        borderDash: [5, 5],
+                        label: { content: 'Norma A7/W35', display: true, position: 'start', font: { size: 10 } }
+                    }
+                }
+            }
+        },
+        scales: {
+            y: { min: 1, max: 7, title: { display: true, text: 'COP' } }
+        }
+    }
+});
+
+// COP vs Temp
+new Chart(document.getElementById('chart-cop-vs-temp'), {
+    type: 'scatter',
+    data: {
+        datasets: [{
+            label: 'COP vs Temp. zewn.',
+            data: generateScatterData(60, -5, 15, 2, 5.5, -0.7),
+            backgroundColor: 'rgba(33,150,243,0.6)',
+            pointRadius: 4
+        }]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            x: { title: { display: true, text: 'Temp. zewnętrzna (°C)' } },
+            y: { title: { display: true, text: 'COP' }, min: 1, max: 6 }
+        }
+    }
+});
+
+// Bilans dobowy
+const days = ['18.08', '19.08', '20.08', '21.08', '22.08', '23.08', '24.08'];
+new Chart(document.getElementById('chart-daily-balance'), {
+    type: 'bar',
+    data: {
+        labels: days,
+        datasets: [
+            {
+                label: 'Ciepło wygenerowane (kWh)',
+                data: [32, 28, 35, 30, 22, 26, 28],
+                backgroundColor: 'rgba(76,175,80,0.7)'
+            },
+            {
+                label: 'Energia zużyta (kWh)',
+                data: [8.2, 7.5, 9.8, 8.0, 6.1, 7.0, 7.1],
+                backgroundColor: 'rgba(244,67,54,0.7)'
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            y: { title: { display: true, text: 'kWh' } }
+        }
+    }
+});
+
+// ==================== TAB 2: HYDRAULIKA ====================
+// Delta T w czasie
+const dtData = generateData(timeLabels12h.length, 3.5, 7.5, true);
+new Chart(document.getElementById('chart-delta-t'), {
+    type: 'line',
+    data: {
+        labels: timeLabels12h,
+        datasets: [{
+            label: 'ΔT (°C)',
+            data: dtData,
+            borderColor: '#FF9800',
+            backgroundColor: 'rgba(255,152,0,0.1)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 0
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            annotation: {
+                annotations: {
+                    box1: {
+                        type: 'box',
+                        yMin: 3,
+                        yMax: 7,
+                        backgroundColor: 'rgba(76,175,80,0.05)',
+                        borderColor: 'rgba(76,175,80,0.3)',
+                        label: { content: 'Norma CO (3-7°C)', display: true, position: { x: 'start', y: 'start' }, font: { size: 10 } }
+                    }
+                }
+            }
+        },
+        scales: {
+            y: { min: 0, max: 12, title: { display: true, text: 'ΔT (°C)' } }
+        }
+    }
+});
+
+// Przepływ
+new Chart(document.getElementById('chart-flow'), {
+    type: 'line',
+    data: {
+        labels: timeLabels12h,
+        datasets: [{
+            label: 'Przepływ (l/min)',
+            data: generateData(timeLabels12h.length, 10, 14, true),
+            borderColor: '#2196F3',
+            backgroundColor: 'rgba(33,150,243,0.1)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 0
+        }]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            y: { min: 0, max: 20, title: { display: true, text: 'l/min' } }
+        }
+    }
+});
+
+// DT vs Flow scatter
+new Chart(document.getElementById('chart-dt-vs-flow'), {
+    type: 'scatter',
+    data: {
+        datasets: [{
+            label: 'ΔT vs Przepływ',
+            data: generateScatterData(50, 6, 16, 2, 10, -0.6),
+            backgroundColor: 'rgba(255,152,0,0.6)',
+            pointRadius: 5
+        }]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            x: { title: { display: true, text: 'Przepływ (l/min)' } },
+            y: { title: { display: true, text: 'ΔT (°C)' } }
+        }
+    }
+});
+
+// ==================== TAB 3: SPRĘŻARKA ====================
+// Histogram cykli
+new Chart(document.getElementById('chart-cycle-hist'), {
+    type: 'bar',
+    data: {
+        labels: ['<15 min', '15-30 min', '30-45 min', '45-60 min', '60-90 min', '90-120 min', '>120 min'],
+        datasets: [{
+            label: 'Liczba cykli',
+            data: [1, 3, 5, 8, 12, 7, 4],
+            backgroundColor: [
+                'rgba(244,67,54,0.7)',
+                'rgba(255,152,0,0.7)',
+                'rgba(255,193,7,0.7)',
+                'rgba(76,175,80,0.5)',
+                'rgba(76,175,80,0.7)',
+                'rgba(76,175,80,0.8)',
+                'rgba(76,175,80,0.9)'
+            ]
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            annotation: {
+                annotations: {
+                    line1: {
+                        type: 'line',
+                        xMin: 2.5,
+                        xMax: 2.5,
+                        borderColor: 'rgba(255,152,0,0.8)',
+                        borderDash: [5, 5],
+                        label: { content: 'Min. 30 min', display: true, font: { size: 10 } }
+                    }
+                }
+            }
+        },
+        scales: {
+            y: { title: { display: true, text: 'Liczba cykli' } }
+        }
+    }
+});
+
+// Starty dzienne
+new Chart(document.getElementById('chart-starts-daily'), {
+    type: 'bar',
+    data: {
+        labels: days,
+        datasets: [{
+            label: 'Starty sprężarki / dobę',
+            data: [10, 8, 12, 9, 6, 8, 8],
+            backgroundColor: 'rgba(33,150,243,0.7)'
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            annotation: {
+                annotations: {
+                    line1: {
+                        type: 'line',
+                        yMin: 15,
+                        yMax: 15,
+                        borderColor: 'rgba(255,152,0,0.7)',
+                        borderDash: [5, 5],
+                        label: { content: 'Próg ostrzegawczy (15)', display: true, position: 'start', font: { size: 10 } }
+                    },
+                    line2: {
+                        type: 'line',
+                        yMin: 20,
+                        yMax: 20,
+                        borderColor: 'rgba(244,67,54,0.7)',
+                        borderDash: [5, 5],
+                        label: { content: 'Próg krytyczny (20)', display: true, position: 'start', font: { size: 10 } }
+                    }
+                }
+            }
+        },
+        scales: {
+            y: { min: 0, max: 25, title: { display: true, text: 'Starty' } }
+        }
+    }
+});
+
+// Częstotliwość sprężarki
+new Chart(document.getElementById('chart-comp-freq'), {
+    type: 'line',
+    data: {
+        labels: timeLabels12h,
+        datasets: [{
+            label: 'Częstotliwość (Hz)',
+            data: generateData(timeLabels12h.length, 0, 95, true).map(v => v < 15 ? 0 : v),
+            borderColor: '#9C27B0',
+            backgroundColor: 'rgba(156,39,176,0.1)',
+            fill: true,
+            tension: 0.2,
+            pointRadius: 0
+        }, {
+            label: 'Modulacja (%)',
+            data: generateData(timeLabels12h.length, 0, 100, true).map(v => v < 15 ? 0 : v),
+            borderColor: 'rgba(255,152,0,0.5)',
+            borderDash: [3, 3],
+            tension: 0.2,
+            pointRadius: 0,
+            yAxisID: 'y1'
+        }]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            y: { min: 0, max: 100, title: { display: true, text: 'Hz' } },
+            y1: { min: 0, max: 100, position: 'right', title: { display: true, text: '% mocy' }, grid: { drawOnChartArea: false } }
+        }
+    }
+});
+
+// ==================== TAB 4: DEFROST ====================
+// Defrost vs temperatura
+new Chart(document.getElementById('chart-defrost-temp'), {
+    type: 'scatter',
+    data: {
+        datasets: [{
+            label: 'Defrost (punkt = cykl)',
+            data: [
+                { x: 2, y: 5 }, { x: 3, y: 6 }, { x: -1, y: 4 },
+                { x: 1, y: 5 }, { x: 4, y: 7 }, { x: 0, y: 5 },
+                { x: -2, y: 4 }, { x: 3, y: 6 }, { x: 2, y: 5 },
+                { x: 5, y: 3 }, { x: -3, y: 8 }, { x: 1, y: 6 }
+            ],
+            backgroundColor: 'rgba(0,188,212,0.7)',
+            pointRadius: 8
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            annotation: {
+                annotations: {
+                    box1: {
+                        type: 'box',
+                        xMin: -3,
+                        xMax: 5,
+                        backgroundColor: 'rgba(0,188,212,0.05)',
+                        borderColor: 'rgba(0,188,212,0.3)',
+                        label: { content: 'Strefa typowych defrostów (-3°C do +5°C)', display: true, font: { size: 10 } }
+                    }
+                }
+            }
+        },
+        scales: {
+            x: { min: -10, max: 15, title: { display: true, text: 'Temp. zewnętrzna (°C)' } },
+            y: { min: 0, max: 12, title: { display: true, text: 'Czas trwania (min)' } }
+        }
+    }
+});
+
+// Odstępy defrost
+new Chart(document.getElementById('chart-defrost-intervals'), {
+    type: 'bar',
+    data: {
+        labels: ['06:15', '07:28', '08:45', '10:32', '12:05', '14:20', '16:50', '18:15', '19:48'],
+        datasets: [{
+            label: 'Odstęp od poprzedniego defrostu (min)',
+            data: [null, 73, 77, 107, 93, 135, 150, 85, 93],
+            backgroundColor: function(ctx) {
+                const v = ctx.raw;
+                if (v === null) return 'rgba(150,150,150,0.3)';
+                if (v < 45) return 'rgba(244,67,54,0.7)';
+                if (v < 60) return 'rgba(255,152,0,0.7)';
+                return 'rgba(0,188,212,0.7)';
+            }
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            annotation: {
+                annotations: {
+                    line1: {
+                        type: 'line',
+                        yMin: 45,
+                        yMax: 45,
+                        borderColor: 'rgba(255,152,0,0.7)',
+                        borderDash: [5, 5],
+                        label: { content: 'Min. 45 min', display: true, position: 'start', font: { size: 10 } }
+                    }
+                }
+            }
+        },
+        scales: {
+            y: { min: 0, max: 180, title: { display: true, text: 'Minuty' } }
+        }
+    }
+});
+
+// EEV
+const eevLabels = timeLabels24h;
+new Chart(document.getElementById('chart-eev'), {
+    type: 'line',
+    data: {
+        labels: eevLabels,
+        datasets: [
+            {
+                label: 'm_eev (główny)',
+                data: generateData(eevLabels.length, 350, 500, true),
+                borderColor: '#FF9800',
+                tension: 0.3,
+                pointRadius: 0
+            },
+            {
+                label: 'a_eev (dodatkowy)',
+                data: generateData(eevLabels.length, 5, 30, true),
+                borderColor: '#9C27B0',
+                tension: 0.3,
+                pointRadius: 0,
+                yAxisID: 'y1'
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            y: { title: { display: true, text: 'm_eev (kroki)' } },
+            y1: { position: 'right', title: { display: true, text: 'a_eev' }, grid: { drawOnChartArea: false } }
+        }
+    }
+});
+
+// Wentylator DC Fan 1
+new Chart(document.getElementById('chart-fans'), {
+    type: 'line',
+    data: {
+        labels: timeLabels12h,
+        datasets: [
+            {
+                label: 'DC Fan 1 (RPM)',
+                data: generateData(timeLabels12h.length, 0, 800, true).map(v => v < 100 ? 0 : v),
+                borderColor: '#4CAF50',
+                backgroundColor: 'rgba(76,175,80,0.1)',
+                fill: true,
+                tension: 0.2,
+                pointRadius: 0
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            y: { min: 0, title: { display: true, text: 'RPM' } }
+        }
+    }
+});
+</script>
+
+</body>
+</html>

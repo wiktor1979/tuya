@@ -97,7 +97,8 @@ BOOL_MAP = {
 
 NEEDED_COLS = [
     "out_water_temp", "in_water_temp", "flow_rate", "ac_vol", "ac_curr",
-    "comp_freq", "disc_temp", "amb_temp", "valve", "heat_temp_set", "defrost"
+    "comp_freq", "disc_temp", "amb_temp", "valve", "heat_temp_set", "defrost",
+    "m_eev", "a_eev", "dc_fan1", "freeze"
 ]
 
 RESAMPLE_AGG = {
@@ -111,7 +112,11 @@ RESAMPLE_AGG = {
     "amb_temp": "mean",
     "heat_temp_set": "last",
     "valve": "mean",
-    "defrost": "max"
+    "defrost": "max",
+    "m_eev": "mean",
+    "a_eev": "mean",
+    "dc_fan1": "mean",
+    "freeze": "max"
 }
 
 
