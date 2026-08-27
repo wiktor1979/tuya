@@ -53,35 +53,37 @@ TEMP_CODES = {
 
 # Konfiguracja histerezy dynamicznej
 # Format: 'nazwa_parametru': { 'active': próg_gdy_pompa_pracuje, 'idle': próg_gdy_pompa_stoi, 'last_value': None }
-# Wartości 'active' i 'idle' są obecnie identyczne, zachowując dotychczasową logikę zapisu.
+# UWAGA: Wartości temperatur (TEMP_CODES) są dzielone przez 10 PRZED sprawdzeniem progu,
+# więc progi dla temperatur są w °C (nie w surowych jednostkach x10).
+# Np. active=0.2 oznacza zapis gdy zmiana >= 0.2°C.
 
 HISTERESIS_CONFIG = {
-    # Temperatury hydrauliczne
-    "out_water_temp": {"active": 2, "idle": 5, "last_value": None},
-    "in_water_temp":  {"active": 2, "idle": 5, "last_value": None},
-    "tank_temp":      {"active": 2, "idle": 5, "last_value": None},
+    # Temperatury hydrauliczne (progi w °C)
+    "out_water_temp": {"active": 0.2, "idle": 0.5, "last_value": None},
+    "in_water_temp":  {"active": 0.2, "idle": 0.5, "last_value": None},
+    "tank_temp":      {"active": 0.2, "idle": 0.5, "last_value": None},
 
-    # Temperatury otoczenia i wewnętrzne
-    "amb_temp":       {"active": 5, "idle": 8, "last_value": None},
-    "tidr":           {"active": 5, "idle": 5, "last_value": None},  # Dodano: redukuje szum o ~97%
+    # Temperatury otoczenia i wewnętrzne (progi w °C)
+    "amb_temp":       {"active": 0.5, "idle": 0.8, "last_value": None},
+    "tidr":           {"active": 0.5, "idle": 0.5, "last_value": None},
 
-    # Temperatury układu chłodniczego
-    "disc_temp":      {"active": 5, "idle": 15, "last_value": None},  # W idle powolny dryf do temp. otoczenia
-    "back_temp":      {"active": 5, "idle": 15, "last_value": None},
+    # Temperatury układu chłodniczego (progi w °C)
+    "disc_temp":      {"active": 0.5, "idle": 1.5, "last_value": None},
+    "back_temp":      {"active": 0.5, "idle": 1.5, "last_value": None},
 
-    # Energia i zasilanie
-    "ac_curr":        {"active": 2.0, "idle": 5.0, "last_value": None},  # Skala x10 (2.0 = krok 0.2A)
+    # Energia i zasilanie (surowe wartości — NIE dzielone przez 10)
+    "ac_curr":        {"active": 2.0, "idle": 5.0, "last_value": None},
     "ac_vol":         {"active": 2.0, "idle": 3.0, "last_value": None},
 
-    # Praca układu mechanicznego
-    "comp_freq":      {"active": 2.0, "idle": 1.0, "last_value": None},  # Krok modulacji sprężarki
+    # Praca układu mechanicznego (surowe wartości)
+    "comp_freq":      {"active": 2.0, "idle": 1.0, "last_value": None},
     "flow_rate":      {"active": 2.0, "idle": 1.0, "last_value": None},
-    "dc_fan1":        {"active": 15.0, "idle": 50.0, "last_value": None}, # Rzeczywisty zakres 0-840 RPM
-    "dc_fan2":        {"active": 50.0, "idle": 50.0, "last_value": None}, # Rzeczywisty zakres 0-840 RPM
+    "dc_fan1":        {"active": 15.0, "idle": 50.0, "last_value": None},
+    "dc_fan2":        {"active": 50.0, "idle": 50.0, "last_value": None},
     
-    # Elektroniczne zawory rozprężne (EEV)
-    "m_eev":          {"active": 5.0, "idle": 20.0, "last_value": None}, # Dodano: kroki zaworu głównego
-    "a_eev":          {"active": 5.0, "idle": 20.0, "last_value": None}, # Dodano: kroki zaworu pomocniczego
+    # Elektroniczne zawory rozprężne (EEV) (surowe wartości)
+    "m_eev":          {"active": 5.0, "idle": 20.0, "last_value": None},
+    "a_eev":          {"active": 5.0, "idle": 20.0, "last_value": None},
 }
 
 MAX_HEARTBEAT_SEC = 300  # Wymuś zapis co najmniej raz na 5 minut

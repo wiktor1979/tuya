@@ -27,3 +27,5 @@ Thumbs.db
 dist/
 build/
 *.egg-info/
+tuya_telemetry.db-wal
+tuya_telemetry.db-shm
