@@ -4,10 +4,8 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from streamlit_autorefresh import st_autorefresh
 
 from app.services.data_loader import (
-    get_pump_status_for_refresh,
     load_pump_data,
     process_telemetry,
     compute_daily_stats,
@@ -19,46 +17,13 @@ from app.ui.sidebar import render_sidebar
 st.set_page_config(page_title="Analiza Parametrów — Pompa Ciepła", layout="wide", page_icon="🔬")
 inject_css()
 
-# --- STATUS POMPY I AUTO-ODŚWIEŻANIE ---
-pump_running = get_pump_status_for_refresh()
-interval_sec = 60 if pump_running else 300
-count = st_autorefresh(interval=interval_sec * 1000, limit=None, key="analysis_refresher")
-
 st.markdown(
     '<h3 style="margin:0;padding:0.2rem 0;">🔬 Analiza Parametrów</h3>',
     unsafe_allow_html=True,
 )
 
-status_color = "#4CAF50" if pump_running else "#888"
-status_text = "Pompa pracuje — odświeżanie co 1 min" if pump_running else "Pompa stoi — odświeżanie co 5 min"
-st.html(
-    f"""
-    <!-- render:{count} -->
-    <div style="text-align:center;font-size:0.85em;color:#aaa;font-family:sans-serif;">
-        Następne odświeżenie za: <span id="cd" style="font-weight:bold;color:#4CAF50;">{interval_sec}</span> s
-        <span style="font-size:0.75em;margin-left:8px;color:{status_color};">{status_text}</span>
-    </div>
-    <script>
-    (function(){{
-        var remaining = {interval_sec};
-        var d = document.getElementById('cd');
-        if (!d) return;
-        d.textContent = remaining;
-        var timer = setInterval(function() {{
-            remaining--;
-            if (remaining <= 0) {{
-                clearInterval(timer);
-                d.textContent = "0";
-                d.style.color = "#FF5722";
-            }} else {{
-                d.textContent = remaining;
-                d.style.color = remaining <= 10 ? "#FF9800" : "#4CAF50";
-            }}
-        }}, 1000);
-    }})();
-    </script>
-    """,
-)
+if st.button("🔄 Odśwież dane"):
+    st.rerun()
 
 # --- PANEL BOCZNY ---
 settings = render_sidebar()
