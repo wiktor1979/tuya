@@ -35,7 +35,7 @@ def inject_css():
     <style>
     /* Redukcja pustej przestrzeni na górze strony */
     .block-container {
-        padding-top: 1rem !important;
+        padding-top: 2.5rem !important;
     }
     header[data-testid="stHeader"] {
         height: 2rem !important;

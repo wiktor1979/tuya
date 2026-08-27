@@ -58,24 +58,14 @@ TEMP_CODES = {
 # Np. active=0.2 oznacza zapis gdy zmiana >= 0.2°C.
 
 HISTERESIS_CONFIG = {
-<<<<<<< Updated upstream
     # Temperatury hydrauliczne (progi w °C)
-=======
-    # Temperatury hydrauliczne
->>>>>>> Stashed changes
     "out_water_temp": {"active": 0.2, "idle": 0.5, "last_value": None},
     "in_water_temp":  {"active": 0.2, "idle": 0.5, "last_value": None},
     "tank_temp":      {"active": 0.2, "idle": 0.5, "last_value": None},
 
-<<<<<<< Updated upstream
     # Temperatury otoczenia i wewnętrzne (progi w °C)
     "amb_temp":       {"active": 0.5, "idle": 0.8, "last_value": None},
     "tidr":           {"active": 0.5, "idle": 0.5, "last_value": None},
-=======
-    # Temperatury otoczenia i wewnętrzne
-    "amb_temp":       {"active": 0.5, "idle": 0.8, "last_value": None},
-    "tidr":           {"active": 0.5, "idle": 0.5, "last_value": None},  # Dodano: redukuje szum o ~97%
->>>>>>> Stashed changes
 
     # Temperatury układu chłodniczego (progi w °C)
     "disc_temp":      {"active": 0.5, "idle": 1.5, "last_value": None},
