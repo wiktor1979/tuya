@@ -38,7 +38,7 @@ MQ_ENV_PROD = "event"
 PULSAR_SERVER_EU = "pulsar+ssl://mqe.tuyaeu.com:7285/"
 
 # Baza danych
-DB_FILE = "./tuya_telemetry.db"
+DB_FILE = "/data/tuya_telemetry.db"
 
 # Domyślne ID urządzenia (dla wstecznej kompatybilności)
 HEAT_PUMP_DEV_ID = "bf874f7ae72aca1fc23op0"
