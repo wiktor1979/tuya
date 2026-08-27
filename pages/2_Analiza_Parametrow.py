@@ -58,7 +58,6 @@ st.html(
     }})();
     </script>
     """,
-    height=35,
 )
 
 # --- PANEL BOCZNY ---

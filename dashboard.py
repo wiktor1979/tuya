@@ -82,7 +82,6 @@ st.html(
     }})();
     </script>
     """,
-    height=35,
 )
 
 # --- ŁADOWANIE DANYCH ---
