@@ -200,7 +200,7 @@ with tab_cop:
             height=350, margin=dict(t=20, b=40),
             yaxis=dict(range=[0, 8]),
         )
-        st.plotly_chart(fig_cop, use_container_width=True)
+        st.plotly_chart(fig_cop, width="stretch")
     else:
         st.info("Brak danych COP w wybranym zakresie.")
 
@@ -223,7 +223,7 @@ with tab_cop:
                 height=350, margin=dict(t=20, b=40),
                 yaxis=dict(range=[0, 8]),
             )
-            st.plotly_chart(fig_scatter, use_container_width=True)
+            st.plotly_chart(fig_scatter, width="stretch")
         else:
             st.info("Brak danych do korelacji COP/temperatura.")
 
@@ -270,7 +270,7 @@ with tab_cop:
                     yaxis_title="SCOP", height=350, margin=dict(t=20, b=40),
                     yaxis=dict(range=[0, max(6, scop_valid[scop_col].max() * 1.3)]),
                 )
-                st.plotly_chart(fig_scop_daily, use_container_width=True)
+                st.plotly_chart(fig_scop_daily, width="stretch")
 
                 # Podsumowanie tekstowe
                 days_above = (scop_valid[scop_col] >= 3.1).sum()
@@ -362,7 +362,7 @@ with tab_hydr:
             yaxis_title="ΔT (°C)", height=350, margin=dict(t=20, b=40),
             yaxis=dict(range=[0, max(15, df_pivot["delta_t"].max() * 1.2 if df_pivot["delta_t"].max() > 0 else 15)]),
         )
-        st.plotly_chart(fig_dt, use_container_width=True)
+        st.plotly_chart(fig_dt, width="stretch")
     else:
         st.info("Brak danych ΔT.")
 
@@ -383,7 +383,7 @@ with tab_hydr:
             fig_flow.update_layout(
                 yaxis_title="l/min", height=320, margin=dict(t=20, b=40),
             )
-            st.plotly_chart(fig_flow, use_container_width=True)
+            st.plotly_chart(fig_flow, width="stretch")
         else:
             st.info("Brak danych przepływu.")
 
@@ -404,7 +404,7 @@ with tab_hydr:
                     opacity=0.5, trendline="ols",
                 )
                 fig_scatter_dt.update_layout(height=320, margin=dict(t=20, b=40))
-                st.plotly_chart(fig_scatter_dt, use_container_width=True)
+                st.plotly_chart(fig_scatter_dt, width="stretch")
             else:
                 st.info("Za mało danych do korelacji.")
         else:
@@ -476,7 +476,7 @@ with tab_comp:
             height=150, margin=dict(t=10, b=30, l=50, r=20),
             showlegend=False,
         )
-        st.plotly_chart(fig_timeline, use_container_width=True)
+        st.plotly_chart(fig_timeline, width="stretch")
     else:
         st.info("Brak danych o pracy sprężarki.")
 
@@ -501,7 +501,7 @@ with tab_comp:
                 xaxis_title="Czas cyklu (min)", yaxis_title="Liczba cykli",
                 height=320, margin=dict(t=20, b=40),
             )
-            st.plotly_chart(fig_hist, use_container_width=True)
+            st.plotly_chart(fig_hist, width="stretch")
         else:
             st.info("Za mało cykli do histogramu.")
 
@@ -521,7 +521,7 @@ with tab_comp:
             fig_starts.update_layout(
                 yaxis_title="Starty", height=320, margin=dict(t=20, b=40),
             )
-            st.plotly_chart(fig_starts, use_container_width=True)
+            st.plotly_chart(fig_starts, width="stretch")
         else:
             st.info("Brak danych dziennych o startach.")
 
@@ -538,7 +538,7 @@ with tab_comp:
         fig_freq.update_layout(
             yaxis_title="Hz", height=300, margin=dict(t=20, b=40),
         )
-        st.plotly_chart(fig_freq, use_container_width=True)
+        st.plotly_chart(fig_freq, width="stretch")
     else:
         st.info("Brak danych częstotliwości sprężarki.")
 
@@ -623,7 +623,7 @@ with tab_defr:
             height=150, margin=dict(t=10, b=30, l=50, r=20),
             showlegend=False,
         )
-        st.plotly_chart(fig_defrost_tl, use_container_width=True)
+        st.plotly_chart(fig_defrost_tl, width="stretch")
     else:
         st.info("Brak danych o defrostach.")
 
@@ -650,7 +650,7 @@ with tab_defr:
                                        fillcolor="rgba(0,188,212,0.05)", line_width=0,
                                        annotation_text="Strefa typowych defrostów")
                 fig_def_temp.update_layout(height=320, margin=dict(t=20, b=40))
-                st.plotly_chart(fig_def_temp, use_container_width=True)
+                st.plotly_chart(fig_def_temp, width="stretch")
             else:
                 st.info("Brak danych do wykresu scatter defrost/temp.")
         else:
@@ -673,7 +673,7 @@ with tab_defr:
                 xaxis_title="Nr cyklu", yaxis_title="Minuty",
                 height=320, margin=dict(t=20, b=40),
             )
-            st.plotly_chart(fig_intervals, use_container_width=True)
+            st.plotly_chart(fig_intervals, width="stretch")
         else:
             st.info("Za mało cykli defrost do analizy odstępów.")
 
@@ -702,7 +702,7 @@ with tab_defr:
                 yaxis2=dict(title="a_eev", overlaying="y", side="right"),
                 height=320, margin=dict(t=20, b=40),
             )
-            st.plotly_chart(fig_eev, use_container_width=True)
+            st.plotly_chart(fig_eev, width="stretch")
         else:
             st.info("Brak danych EEV.")
 
@@ -719,7 +719,7 @@ with tab_defr:
             fig_fan.update_layout(
                 yaxis_title="RPM", height=320, margin=dict(t=20, b=40),
             )
-            st.plotly_chart(fig_fan, use_container_width=True)
+            st.plotly_chart(fig_fan, width="stretch")
         else:
             st.info("Brak danych DC Fan 1.")
 
