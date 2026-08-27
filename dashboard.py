@@ -3,8 +3,6 @@ import pandas as pd
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
-import streamlit.components.v1 as components
-
 from app.services.data_loader import (
     get_pump_status_for_refresh,
     load_pump_data,
@@ -57,7 +55,7 @@ if st.button("🔄 Odśwież dane"):
 
 status_color = "#4CAF50" if pump_running else "#888"
 status_text = "Pompa pracuje — odświeżanie co 1 min" if pump_running else "Pompa stoi — odświeżanie co 5 min"
-components.html(
+st.html(
     f"""
     <!-- render:{count} -->
     <div style="text-align:center;font-size:0.85em;color:#aaa;font-family:sans-serif;">
