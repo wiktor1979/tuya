@@ -24,6 +24,7 @@ inject_css()
 # --- STATUS POMPY I AUTO-ODŚWIEŻANIE ---
 pump_running = get_pump_status_for_refresh()
 interval_sec = 60 if pump_running else 300
+count = st_autorefresh(interval=interval_sec * 1000, limit=None, key="analysis_refresher")
 
 st.markdown(
     '<h3 style="margin:0;padding:0.2rem 0;">🔬 Analiza Parametrów</h3>',
@@ -61,8 +62,6 @@ components.html(
     """,
     height=35,
 )
-
-count = st_autorefresh(interval=interval_sec * 1000, limit=None, key="analysis_refresher")
 
 # --- PANEL BOCZNY ---
 settings = render_sidebar()
