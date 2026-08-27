@@ -45,17 +45,6 @@ def render(df: pd.DataFrame, df_pivot: pd.DataFrame, resample_rule, time_offset_
     cp2.metric("⚡ Pobór prądu (P_el)", f"{latest_p_el:.2f} kW")
 
     st.markdown("---")
-    st.subheader("📊 Chwilowe COP z podziałem na tryb CO / CWU")
-    fig_cop = px.line(
-        df_pivot.dropna(subset=["COP"]),
-        x="czas", y="COP", color="Tryb",
-        color_discrete_map={"CO": "#2ECC71", "CWU": "#E67E22"},
-        title="Wykres chwilowego COP (Zielony = CO, Pomarańczowy = CWU)",
-        markers=(resample_rule is not None)
-    )
-    fig_cop.update_layout(hovermode="x unified")
-    st.plotly_chart(fig_cop, width="stretch")
-
     st.subheader("📈 Przebieg wybranych parametrów")
     df_corrected = apply_time_correction(df.copy(), time_offset_hours)
     all_codes = df_corrected["code"].unique().tolist()

@@ -25,7 +25,10 @@ inject_css()
 pump_running = get_pump_status_for_refresh()
 interval_sec = 60 if pump_running else 300
 
-st.title("🔬 Analiza Parametrów Pompy Ciepła")
+st.markdown(
+    '<h3 style="margin:0;padding:0.2rem 0;">🔬 Analiza Parametrów</h3>',
+    unsafe_allow_html=True,
+)
 
 status_color = "#4CAF50" if pump_running else "#888"
 status_text = "Pompa pracuje — odświeżanie co 1 min" if pump_running else "Pompa stoi — odświeżanie co 5 min"

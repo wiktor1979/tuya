@@ -33,6 +33,14 @@ def inject_css():
     """Wstrzykuje style CSS do strony Streamlit."""
     st.markdown("""
     <style>
+    /* Redukcja pustej przestrzeni na górze strony */
+    .block-container {
+        padding-top: 1rem !important;
+    }
+    header[data-testid="stHeader"] {
+        height: 2rem !important;
+    }
+
     /* Wygląd kafelków metryk */
     [data-testid="stMetric"] {
         background-color: #1E1E1E;

@@ -43,7 +43,10 @@ interval_ms = interval_sec * 1000
 # Interwał jest aktualizowany dynamicznie — Streamlit zaktualizuje props komponentu.
 count = st_autorefresh(interval=interval_ms, limit=None, key="auto_refresher")
 
-st.title("🔥 Panel Monitorowania i Diagnostyki Pompy Ciepła")
+st.markdown(
+    '<h3 style="margin:0;padding:0.2rem 0;">🔥 Monitor Pompy Ciepła</h3>',
+    unsafe_allow_html=True,
+)
 
 # --- PANEL BOCZNY ---
 settings = render_sidebar()
