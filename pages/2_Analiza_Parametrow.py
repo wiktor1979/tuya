@@ -231,7 +231,7 @@ with tab_cop:
         st.markdown("##### 📊 SCOP dzienny z progiem opłacalności")
         scop_col = "SCOP_realny" if "SCOP_realny" in daily_df.columns else "SCOP_dzienny"
         if not daily_df.empty and scop_col in daily_df.columns:
-            scop_valid = daily_df[daily_df[scop_col].notna()].copy()
+            scop_valid = daily_df[daily_df[scop_col].notna() & (daily_df["E_el_total"] >= 0.1)].copy()
             if not scop_valid.empty:
                 # Kolor słupka: zielony jeśli SCOP realny >= 3.1, czerwony jeśli poniżej
                 scop_valid["kolor"] = scop_valid[scop_col].apply(
@@ -288,7 +288,11 @@ with tab_cop:
     st.markdown("##### ⚠️ Alerty wydajności")
     if not daily_df.empty:
         scop_alert_col = "SCOP_realny" if "SCOP_realny" in daily_df.columns else "SCOP_dzienny"
-        low_scop_days = daily_df[daily_df[scop_alert_col].notna() & (daily_df[scop_alert_col] < 3.1)].copy()
+        low_scop_days = daily_df[
+            daily_df[scop_alert_col].notna()
+            & (daily_df[scop_alert_col] < 3.1)
+            & (daily_df["E_el_total"] >= 0.1)
+        ].copy()
 
         if not low_scop_days.empty:
             for _, row in low_scop_days.sort_values(scop_alert_col).head(5).iterrows():
