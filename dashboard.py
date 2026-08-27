@@ -59,6 +59,7 @@ status_color = "#4CAF50" if pump_running else "#888"
 status_text = "Pompa pracuje — odświeżanie co 1 min" if pump_running else "Pompa stoi — odświeżanie co 5 min"
 components.html(
     f"""
+    <!-- render:{count} -->
     <div style="text-align:center;font-size:0.85em;color:#aaa;font-family:sans-serif;">
         Następne odświeżenie za: <span id="cd" style="font-weight:bold;color:#4CAF50;">{interval_sec}</span> s
         <span style="font-size:0.75em;margin-left:8px;color:{status_color};">{status_text}</span>
