@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/sh 
 
 # 1. Uruchomienie zbierania danych w tle
 python main.py &
