@@ -57,13 +57,13 @@ TEMP_CODES = {
 
 HISTERESIS_CONFIG = {
     # Temperatury hydrauliczne
-    "out_water_temp": {"active": 2, "idle": 5, "last_value": None},
-    "in_water_temp":  {"active": 2, "idle": 5, "last_value": None},
-    "tank_temp":      {"active": 2, "idle": 5, "last_value": None},
+    "out_water_temp": {"active": 0.2, "idle": 0.5, "last_value": None},
+    "in_water_temp":  {"active": 0.2, "idle": 0.5, "last_value": None},
+    "tank_temp":      {"active": 0.2, "idle": 0.5, "last_value": None},
 
     # Temperatury otoczenia i wewnętrzne
-    "amb_temp":       {"active": 5, "idle": 8, "last_value": None},
-    "tidr":           {"active": 5, "idle": 5, "last_value": None},  # Dodano: redukuje szum o ~97%
+    "amb_temp":       {"active": 0.5, "idle": 0.8, "last_value": None},
+    "tidr":           {"active": 0.5, "idle": 0.5, "last_value": None},  # Dodano: redukuje szum o ~97%
 
     # Temperatury układu chłodniczego
     "disc_temp":      {"active": 5, "idle": 15, "last_value": None},  # W idle powolny dryf do temp. otoczenia
