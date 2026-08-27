@@ -284,20 +284,29 @@ with tab_cop:
         else:
             st.info("Brak danych dziennych do wykresu SCOP.")
 
-    # --- Alerty COP ---
-    if safe_col(df_pivot, "COP") and safe_col(df_pivot, "amb_temp"):
-        st.markdown("##### ⚠️ Alerty wydajności")
-        # Szukamy momentów gdy COP < 2.5 przy temp > 5°C
-        alerts_mask = (df_pivot["COP"] < 2.5) & (df_pivot["amb_temp"] > 5) & df_pivot["COP"].notna()
-        alerts = df_pivot[alerts_mask]
-        if not alerts.empty:
-            for _, row in alerts.head(5).iterrows():
-                st.warning(
-                    f"⚠️ {row['czas'].strftime('%d.%m %H:%M')} — COP = {row['COP']:.1f} "
-                    f"przy temp. zewn. {row['amb_temp']:.1f}°C (oczekiwany >3.0). Sprawdź przepływ i filtr."
+    # --- Alerty wydajności (bazowane na SCOP dziennym, nie COP chwilowym) ---
+    st.markdown("##### ⚠️ Alerty wydajności")
+    if not daily_df.empty:
+        scop_alert_col = "SCOP_realny" if "SCOP_realny" in daily_df.columns else "SCOP_dzienny"
+        low_scop_days = daily_df[daily_df[scop_alert_col].notna() & (daily_df[scop_alert_col] < 3.1)].copy()
+
+        if not low_scop_days.empty:
+            for _, row in low_scop_days.sort_values(scop_alert_col).head(5).iterrows():
+                amb = f"{row['amb_temp']:.1f}°C" if pd.notna(row.get('amb_temp')) else "b/d"
+                defrosts = int(row.get('defrost_start', 0))
+                severity = "error" if row[scop_alert_col] < 2.5 else "warning"
+                msg = (
+                    f"📅 {row['dzień']} — SCOP realny = {row[scop_alert_col]:.2f} "
+                    f"(próg 3.1), śr. temp. zewn. {amb}, defrostów: {defrosts}"
                 )
+                if severity == "error":
+                    st.error(f"🚨 {msg}. Sprawdź przepływ, filtr i nastawy.")
+                else:
+                    st.warning(f"⚠️ {msg}")
         else:
-            st.success("✅ Brak alertów — COP w normie dla danych temperatur zewnętrznych.")
+            st.success("✅ Brak alertów — SCOP dzienny powyżej progu opłacalności 3.1 we wszystkich dniach.")
+    else:
+        st.info("Brak danych dziennych do oceny wydajności.")
 
 
 # ==============================================================================
