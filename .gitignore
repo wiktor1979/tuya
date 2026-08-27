@@ -27,5 +27,10 @@ Thumbs.db
 dist/
 build/
 *.egg-info/
+<<<<<<< Updated upstream
 tuya_telemetry.db-wal
 tuya_telemetry.db-shm
+=======
+tuya_telemetry.db-shm
+tuya_telemetry.db-wal
+>>>>>>> Stashed changes
