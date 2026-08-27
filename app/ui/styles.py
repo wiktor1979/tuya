@@ -1,4 +1,4 @@
-"""Style CSS i stałe wizualne dashboardu."""
+"""Style CSS i stałe wizualne dashboardu. """
 import streamlit as st
 
 # --- SŁOWNIK METADANYCH PARAMETRÓW POMPY ---
