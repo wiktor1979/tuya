@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 from app.config import (
     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_ENABLED,
-    HEAT_PUMP_DEV_ID,
+    HEAT_PUMP_DEV_ID, DB_FILE,
 )
 from app.services.analytics import decode_fault_bitmap
 
@@ -74,7 +74,7 @@ def send_fault_alert(device_id: str, fault_codes: List[str], fault_bitmap: int) 
     )
     sent = send_telegram(msg)
     if sent:
-        print(f"[Telegram] Wysłano alert awarii: {codes_str} ({device_id})", flush=True)
+        print(f"[Telegram] Wyslano alert awarii: {codes_str} ({device_id})", flush=True)
     return sent
 
 
@@ -93,7 +93,7 @@ def send_fault_resolved(device_id: str, resolved_codes: List[str]) -> bool:
     )
     sent = send_telegram(msg)
     if sent:
-        print(f"[Telegram] Wysłano info o rozwiązaniu: {codes_str} ({device_id})", flush=True)
+        print(f"[Telegram] Wyslano info o rozwiazaniu: {codes_str} ({device_id})", flush=True)
     return sent
 
 
@@ -111,7 +111,7 @@ def send_communication_lost(device_id: str, minutes_silent: int) -> bool:
     )
     sent = send_telegram(msg)
     if sent:
-        print(f"[Telegram] Wysłano alert utraty komunikacji: {minutes_silent} min ({device_id})", flush=True)
+        print(f"[Telegram] Wyslano alert utraty komunikacji: {minutes_silent} min ({device_id})", flush=True)
     return sent
 
 
@@ -120,156 +120,102 @@ def send_communication_lost(device_id: str, minutes_silent: int) -> bool:
 def build_daily_report(device_id: str) -> Optional[str]:
     """
     Buduje raport dzienny na podstawie danych z bazy.
-    Zawiera: SCOP, zużycie energii, taktowanie, disc_temp, awarie, podsumowanie.
+    Używa tych samych funkcji co dashboard (process_telemetry, compute_daily_stats).
     
     Returns:
         Tekst raportu Markdown lub None jeśli brak danych.
     """
-    # Import tu aby uniknąć circular import
-    from app.services.database import db_cursor, get_fault_history
+    from app.services.database import db_cursor, get_fault_history, get_setting
+    from app.services.data_loader import process_telemetry, compute_daily_stats
     from app.config import SERVER_TIMEZONE_OFFSET
+    import pandas as pd
+    import sqlite3
+
+    # Kalibracja — te same wartości co sidebar (persystowane w settings)
+    cos_phi = float(get_setting("cos_phi", "1.00"))
+    standby_power_w = int(get_setting("standby_power_w", "15"))
+    active_power_w = int(get_setting("active_power_w", "130"))
 
     today = datetime.now().date()
     yesterday = today - timedelta(days=1)
     
     # Zakres: od 00:00 wczoraj do 00:00 dziś (czas lokalny użytkownika)
-    # Serwer jest przesunięty o SERVER_TIMEZONE_OFFSET, więc kompensujemy
-    offset_sec = -SERVER_TIMEZONE_OFFSET * 3600  # jeśli offset=-2, dodajemy +2h do UTC
+    offset_sec = -SERVER_TIMEZONE_OFFSET * 3600
     ts_start = int(datetime(yesterday.year, yesterday.month, yesterday.day).timestamp()) + offset_sec
     ts_end = int(datetime(today.year, today.month, today.day).timestamp()) + offset_sec
 
+    # Załaduj dane z bazy
+    conn = sqlite3.connect(DB_FILE)
+    df_raw = pd.read_sql_query(
+        "SELECT datetime(timestamp, 'unixepoch', 'localtime') as czas, code, val_num, val_str "
+        "FROM telemetry WHERE device_id = ? AND timestamp >= ? AND timestamp < ? ORDER BY timestamp ASC",
+        conn, params=(device_id, ts_start, ts_end)
+    )
+    conn.close()
+
+    if df_raw.empty:
+        return None
+
+    # Przetwórz identycznie jak dashboard
+    df_pivot = process_telemetry(df_raw, -SERVER_TIMEZONE_OFFSET, cos_phi, standby_power_w, active_power_w, "5min")
+    if df_pivot is None or df_pivot.empty:
+        return None
+
+    daily = compute_daily_stats(df_pivot, -SERVER_TIMEZONE_OFFSET)
+    if daily.empty:
+        return None
+
+    # Weź dane za wczoraj (powinien być 1 wiersz)
+    row = daily.iloc[0]
+    scop = row.get("SCOP_realny")
+    e_el = row.get("E_el_total", 0)
+    comp_starts = int(row.get("comp_start", 0))
+    hours_work = row.get("dt_hours_work", 0)
+    defrost_count = int(row.get("defrost_start", 0))
+
+    # Awarie z fault_log za wczoraj
     with db_cursor() as cursor:
-        # 1. Zużycie energii (przybliżone z ac_vol * ac_curr)
-        cursor.execute('''
-            SELECT 
-                COUNT(*) as samples,
-                AVG(val_num) as avg_comp_freq
-            FROM telemetry
-            WHERE device_id = ? AND code = 'comp_freq' 
-                AND timestamp >= ? AND timestamp < ?
-        ''', (device_id, ts_start, ts_end))
-        comp_row = cursor.fetchone()
-        total_samples = comp_row[0] if comp_row else 0
-
-        if total_samples == 0:
-            return None  # Brak danych za wczoraj
-
-        avg_comp = comp_row[1] or 0
-
-        # 2. Starty sprężarki (taktowanie)
-        cursor.execute('''
-            SELECT timestamp, val_num FROM telemetry
-            WHERE device_id = ? AND code = 'comp_freq'
-                AND timestamp >= ? AND timestamp < ?
-            ORDER BY timestamp ASC
-        ''', (device_id, ts_start, ts_end))
-        freq_rows = cursor.fetchall()
-        
-        comp_starts = 0
-        hours_work = 0.0
-        prev_on = False
-        prev_ts = None
-        for ts, val in freq_rows:
-            is_on = val is not None and val > 5
-            if is_on and not prev_on:
-                comp_starts += 1
-            if is_on and prev_ts:
-                hours_work += (ts - prev_ts) / 3600.0
-            prev_on = is_on
-            prev_ts = ts
-
-        # 3. Max disc_temp
-        cursor.execute('''
-            SELECT MAX(val_num) FROM telemetry
-            WHERE device_id = ? AND code = 'disc_temp'
-                AND timestamp >= ? AND timestamp < ?
-        ''', (device_id, ts_start, ts_end))
-        max_disc_row = cursor.fetchone()
-        max_disc = max_disc_row[0] if max_disc_row and max_disc_row[0] else None
-
-        # 4. Średnia temp. zewnętrzna
-        cursor.execute('''
-            SELECT AVG(val_num) FROM telemetry
-            WHERE device_id = ? AND code = 'amb_temp'
-                AND timestamp >= ? AND timestamp < ?
-        ''', (device_id, ts_start, ts_end))
-        avg_amb_row = cursor.fetchone()
-        avg_amb = avg_amb_row[0] if avg_amb_row and avg_amb_row[0] else None
-
-        # 5. Przybliżone zużycie energii el.
-        cursor.execute('''
-            SELECT AVG(t1.val_num * t2.val_num) 
-            FROM telemetry t1
-            JOIN telemetry t2 ON t1.device_id = t2.device_id 
-                AND t1.timestamp = t2.timestamp
-            WHERE t1.device_id = ? AND t1.code = 'ac_vol' AND t2.code = 'ac_curr'
-                AND t1.timestamp >= ? AND t1.timestamp < ?
-        ''', (device_id, ts_start, ts_end))
-        avg_power_row = cursor.fetchone()
-        avg_power_va = avg_power_row[0] if avg_power_row and avg_power_row[0] else None
-        
-        # 6. Defrosty
-        cursor.execute('''
-            SELECT COUNT(*) FROM (
-                SELECT timestamp, val_str,
-                    LAG(val_str) OVER (ORDER BY timestamp) as prev_val
-                FROM telemetry
-                WHERE device_id = ? AND code = 'defrost'
-                    AND timestamp >= ? AND timestamp < ?
-            ) WHERE val_str = 'True' AND (prev_val = 'False' OR prev_val IS NULL)
-        ''', (device_id, ts_start, ts_end))
-        defrost_row = cursor.fetchone()
-        defrost_count = defrost_row[0] if defrost_row else 0
-
-    # 7. Awarie z fault_log za wczoraj
+        pass  # potrzebne aby otworzyć kontekst
     fault_history = get_fault_history(device_id, limit=100)
     faults_yesterday = []
     for _, ts, code, bitmap, resolved, resolved_at in fault_history:
         if ts_start <= ts < ts_end:
-            status = "rozwiązana" if resolved else "AKTYWNA"
+            status = "rozwiazana" if resolved else "AKTYWNA"
             faults_yesterday.append(f"{code} ({status})")
 
     # --- Budowanie raportu ---
-    # Data lokalna użytkownika (wczoraj wg jego strefy czasowej)
     local_yesterday = (datetime.now() + timedelta(hours=-SERVER_TIMEZONE_OFFSET) - timedelta(days=1)).date()
     date_str = local_yesterday.strftime("%Y-%m-%d")
     lines = [f"📊 *Raport dzienny — {date_str}*", f"Urządzenie: `{device_id}`", ""]
 
-    # Praca sprężarki
-    lines.append(f"⏱ Czas pracy sprężarki: *{hours_work:.1f} h*")
-    lines.append(f"🔄 Starty sprężarki: *{comp_starts}*")
-    if comp_starts > 0 and hours_work > 0:
-        avg_run_min = (hours_work / comp_starts) * 60
-        lines.append(f"📏 Śr. czas pracy/start: *{avg_run_min:.0f} min*")
+    # SCOP dzienny
+    if scop is not None and scop > 0.5:
+        scop_icon = "✅" if scop >= 3.1 else "⚠️"
+        lines.append(f"{scop_icon} SCOP dzienny: *{scop:.2f}*")
+    else:
+        lines.append("SCOP dzienny: _brak danych_")
 
-    # Taktowanie
-    if comp_starts > 12:
-        lines.append(f"⚠️ *Taktowanie:* {comp_starts} startów/dzień (próg: 12)")
+    # Zużycie energii
+    if e_el > 0:
+        lines.append(f"⚡ Zużycie energii: *{e_el:.2f} kWh*")
+    else:
+        lines.append("⚡ Zużycie energii: _brak danych_")
 
-    # Temperatury
-    if avg_amb is not None:
-        lines.append(f"🌡 Śr. temp. zewnętrzna: *{avg_amb:.1f}°C*")
-    if max_disc is not None:
-        lines.append(f"🔥 Max temp. tłoczenia: *{max_disc:.1f}°C*")
-        if max_disc >= 90:
-            lines.append("⚠️ *Krytyczna temp. tłoczenia ≥90°C!*")
+    # Czas pracy sprężarki
+    lines.append(f"⏱ Czas pracy: *{hours_work:.1f} h*")
 
-    # Energia (przybliżona)
-    if avg_power_va and hours_work > 0:
-        # P_el ≈ V * I * cos_phi / 10 (ac_curr ma skalę ×0.1)
-        avg_p_kw = avg_power_va / 10.0 * 0.95 / 1000.0
-        e_el_kwh = avg_p_kw * hours_work
-        lines.append(f"⚡ Szacowane zużycie: *{e_el_kwh:.1f} kWh*")
+    # Starty sprężarki
+    takt_icon = "⚠️" if comp_starts > 12 else ""
+    lines.append(f"🔄 Starty: *{comp_starts}* {takt_icon}")
 
     # Defrosty
-    lines.append(f"❄️ Cykli odszraniania: *{defrost_count}*")
+    lines.append(f"❄️ Defrosty: *{defrost_count}*")
 
     # Awarie
     if faults_yesterday:
         lines.append("")
-        lines.append("🚨 *Awarie:*")
         for fault_str in faults_yesterday:
-            lines.append(f"  • {fault_str}")
+            lines.append(f"🚨 {fault_str}")
     else:
         lines.append("✅ Brak awarii")
 
@@ -285,5 +231,5 @@ def send_daily_report(device_id: str) -> bool:
 
     sent = send_telegram(report)
     if sent:
-        print(f"[Telegram] Wysłano raport dzienny ({device_id})", flush=True)
+        print(f"[Telegram] Wyslano raport dzienny ({device_id})", flush=True)
     return sent

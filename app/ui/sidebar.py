@@ -60,10 +60,23 @@ def render_sidebar() -> SidebarSettings:
 
     # Sekcje zwinięte
     with st.sidebar.expander("⚙️ Kalkulator COP i Kalibracja"):
-        cos_phi = st.slider("Współczynnik mocy (cos φ)", 0.80, 1.00, 1.00, 0.01)
+        from app.services.database import get_setting, set_setting
+        saved_cos_phi = float(get_setting("cos_phi", "1.00"))
+        saved_standby = int(get_setting("standby_power_w", "15"))
+        saved_active = int(get_setting("active_power_w", "130"))
+
+        cos_phi = st.slider("Współczynnik mocy (cos φ)", 0.80, 1.00, saved_cos_phi, 0.01)
         st.subheader("🛠️ Kalibracja strat mocy")
-        standby_power_w = st.number_input("Pobór w spoczynku (elektronika) [W]", min_value=0, max_value=100, value=15, step=5)
-        active_power_w = st.number_input("Pobór pracy (wentylator, pompa obieg.) [W]", min_value=0, max_value=300, value=130, step=10)
+        standby_power_w = st.number_input("Pobór w spoczynku (elektronika) [W]", min_value=0, max_value=100, value=saved_standby, step=5)
+        active_power_w = st.number_input("Pobór pracy (wentylator, pompa obieg.) [W]", min_value=0, max_value=300, value=saved_active, step=10)
+
+        # Zapisz zmiany do bazy
+        if cos_phi != saved_cos_phi:
+            set_setting("cos_phi", str(cos_phi))
+        if standby_power_w != saved_standby:
+            set_setting("standby_power_w", str(standby_power_w))
+        if active_power_w != saved_active:
+            set_setting("active_power_w", str(active_power_w))
 
     with st.sidebar.expander("🕐 Korekta czasu i Koszty"):
         time_offset_hours = st.slider(
