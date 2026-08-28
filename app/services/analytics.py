@@ -633,7 +633,7 @@ class HeatingCurveAnalysis:
     estimated_slope: Optional[float]  # °C nastawy / °C powietrza
     recommendation: Optional[str]
     recommendation_detail: Optional[str]
-    curve_low_current: Optional[float]  # nastawa przy -10 z formularza
+    curve_low_current: Optional[float]  # nastawa przy -15 z formularza
     curve_high_current: Optional[float]  # nastawa przy +20 z formularza
 
 
@@ -653,7 +653,7 @@ def analyze_heating_curve(
         df_pivot: DataFrame z przetworzoną telemetrią (wymaga: amb_temp, comp_freq, Tryb, 
                   heat_temp_set, out_water_temp, COP, czas)
         weather_df: DataFrame pogodowy z kolumnami direct_radiation, diffuse_radiation
-        curve_low: nastawa temp. wody przy -10°C (z formularza użytkownika)
+        curve_low: nastawa temp. wody przy -15°C (z formularza użytkownika)
         curve_high: nastawa temp. wody przy +20°C (z formularza użytkownika)
         bin_size: szerokość przedziału temperaturowego [°C]
         min_hours_per_bin: min. godzin danych CO aby bin był wiarygodny
@@ -898,7 +898,7 @@ def _generate_curve_recommendation(
 
     if not low_ok and not low_overloaded:
         delta = suggest_delta(duty_low)
-        temp_label = "-10°C"
+        temp_label = "-15°C"
         if curve_low is not None and delta > 0:
             parts.append(f"Obniż nastawę dla {temp_label} z {curve_low:.0f}°C na ~{curve_low - delta:.0f}°C")
         elif delta > 0:
@@ -910,9 +910,9 @@ def _generate_curve_recommendation(
 
     if low_overloaded:
         if curve_low is not None:
-            parts.append(f"Podnieś nastawę dla -10°C z {curve_low:.0f}°C o 1-2°C")
+            parts.append(f"Podnieś nastawę dla -15°C z {curve_low:.0f}°C o 1-2°C")
         else:
-            parts.append("Podnieś nastawę dla -10°C o 1-2°C")
+            parts.append("Podnieś nastawę dla -15°C o 1-2°C")
         detail_parts.append(
             f"Strefa mrozu: sprężarka pracuje na wysokich obrotach (śr. {comp_low:.0f} Hz). "
             f"Pompa może nie nadążać — nastawa za niska."

@@ -14,13 +14,13 @@ def render(df_pivot: pd.DataFrame, weather_df: pd.DataFrame = None):
     with st.expander("⚙️ Ustawienia krzywej grzewczej", expanded=False):
         st.caption(
             "Wpisz aktualne wartości krzywej ze sterownika pompy. "
-            "Krzywa jest definiowana przez 2 punkty: temperaturę wody przy -10°C i +20°C."
+            "Krzywa jest definiowana przez 2 punkty: temperaturę wody przy -15°C i +20°C."
         )
         col_l, col_r = st.columns(2)
         with col_l:
             saved_low = get_setting("curve_low_temp", "")
             curve_low_str = st.text_input(
-                "Temp. wody przy **-10°C** [°C]",
+                "Temp. wody przy **-15°C** [°C]",
                 value=saved_low,
                 key="curve_low_input",
                 placeholder="np. 43",
@@ -95,7 +95,7 @@ def render(df_pivot: pd.DataFrame, weather_df: pd.DataFrame = None):
     if analysis.estimated_slope is not None:
         slope_info = f"Estymowane nachylenie krzywej: **{analysis.estimated_slope:.2f} °C/°C** "
         if curve_low is not None and curve_high is not None:
-            theoretical_slope = (curve_low - curve_high) / (-10.0 - 20.0)
+            theoretical_slope = (curve_low - curve_high) / (-15.0 - 20.0)
             slope_info += f"(teoretyczne z formularza: {theoretical_slope:.2f} °C/°C)"
         st.caption(slope_info)
 

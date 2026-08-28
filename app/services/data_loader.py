@@ -391,3 +391,82 @@ def compute_operational_stats(daily_df: pd.DataFrame, df_pivot: pd.DataFrame) ->
         "total_work_hours": total_work_hours,
         "avg_work_time_per_start": avg_work_time_per_start,
     }
+
+
+
+def compute_monthly_stats(df_pivot: pd.DataFrame, time_offset_hours: int,
+                          electricity_price: float = 1.0,
+                          hdd_base_temp: float = 15.0) -> pd.DataFrame:
+    """
+    Oblicza statystyki miesięczne z HDD (Heating Degree Days).
+    
+    Args:
+        df_pivot: DataFrame z przetworzoną telemetrią
+        time_offset_hours: przesunięcie czasu
+        electricity_price: cena prądu zł/kWh
+        hdd_base_temp: temperatura bazowa HDD (domyślnie 15°C)
+    
+    Returns:
+        DataFrame z kolumnami: miesiąc, HDD, E_el, E_th, SCOP_realny, kWh_per_HDD, koszt
+    """
+    if df_pivot is None or df_pivot.empty:
+        return pd.DataFrame()
+
+    df = df_pivot.copy()
+    df["dzień"] = df["czas"].dt.date
+    df["miesiąc"] = df["czas"].dt.to_period("M")
+
+    # Oblicz dzienne HDD: max(0, base - avg_temp_dzienna)
+    daily_amb = df.groupby("dzień")["amb_temp"].mean()
+    daily_hdd = (hdd_base_temp - daily_amb).clip(lower=0)
+
+    # Dodaj dzień do df_pivot
+    df["daily_hdd"] = df["dzień"].map(daily_hdd)
+
+    # Agregacja miesięczna
+    monthly_agg = df.groupby("miesiąc").agg(
+        HDD=("daily_hdd", lambda x: x.drop_duplicates().sum()),
+        E_el_kwh=("E_el_kwh", "sum"),
+        E_th_kwh=("E_th_kwh", "sum"),
+        E_el_co=("E_el_co_row", "sum"),
+        E_th_co=("E_th_co_row", "sum"),
+        E_el_cwu=("E_el_cwu_row", "sum"),
+        E_th_cwu=("E_th_cwu_row", "sum"),
+        E_th_defrost=("E_th_defrost_kwh", "sum"),
+        dt_hours_work=("dt_hours_work", "sum"),
+        comp_start=("comp_start", "sum"),
+        defrost_start=("defrost_start", "sum"),
+        amb_temp_avg=("amb_temp", "mean"),
+    ).reset_index()
+
+    # SCOP realny miesięczny (łącznie)
+    e_th_real = monthly_agg["E_th_kwh"] + monthly_agg["E_th_defrost"]
+    monthly_agg["SCOP_realny"] = np.where(
+        monthly_agg["E_el_kwh"] > 0, e_th_real / monthly_agg["E_el_kwh"], np.nan
+    )
+
+    # SCOP CO (tylko ogrzewanie)
+    e_th_co_real = monthly_agg["E_th_co"] + monthly_agg["E_th_defrost"]  # defrost dotyczy CO
+    monthly_agg["SCOP_co"] = np.where(
+        monthly_agg["E_el_co"] > 0, e_th_co_real / monthly_agg["E_el_co"], np.nan
+    )
+
+    # SCOP CWU
+    monthly_agg["SCOP_cwu"] = np.where(
+        monthly_agg["E_el_cwu"] > 0, monthly_agg["E_th_cwu"] / monthly_agg["E_el_cwu"], np.nan
+    )
+
+    # kWh/HDD — TYLKO energia CO na stopniodzień (CWU nie zależy od pogody)
+    monthly_agg["kWh_per_HDD"] = np.where(
+        monthly_agg["HDD"] > 0, monthly_agg["E_el_co"] / monthly_agg["HDD"], np.nan
+    )
+
+    # Koszt łączny i rozdzielony
+    monthly_agg["koszt"] = monthly_agg["E_el_kwh"] * electricity_price
+    monthly_agg["koszt_co"] = monthly_agg["E_el_co"] * electricity_price
+    monthly_agg["koszt_cwu"] = monthly_agg["E_el_cwu"] * electricity_price
+
+    # Formatowanie miesiąca
+    monthly_agg["miesiąc_str"] = monthly_agg["miesiąc"].dt.strftime("%Y-%m")
+
+    return monthly_agg

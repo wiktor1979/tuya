@@ -42,14 +42,12 @@ def render(
 
 def _render_weather_metrics(weather):
     """Metryki pogodowe."""
-    wx_col1, wx_col2, wx_col3, wx_col4 = st.columns(4)
+    wx_col1, wx_col2, wx_col3 = st.columns(3)
     wx_col1.metric("Średnia temperatura zewn.", f"{weather.temp_outside_avg:.1f}°C")
     wx_col2.metric("Korelacja COP↔Temp", f"{weather.cop_vs_temp_correlation:.2f}",
                   help="Współczynnik korelacji Pearsona (-1 do 1). Wartości dodatnie oznaczają że COP rośnie z temperaturą.")
     wx_col3.metric("Spadek COP na °C", f"{weather.efficiency_drop_per_degree:.3f}",
                   help="O ile spada COP przy spadku temperatury o 1°C")
-    wx_col4.metric("HDD (Heating Degree Days)", f"{weather.heating_degree_days:.1f}",
-                  help="Stopniodni grzania - miara chłodu okresu")
 
 
 def _render_cop_temp_ranges(weather):

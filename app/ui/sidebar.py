@@ -33,6 +33,7 @@ class SidebarSettings:
     active_power_w: int
     time_offset_hours: int
     electricity_price: float
+    gas_price: float
 
 
 def render_sidebar() -> SidebarSettings:
@@ -87,15 +88,31 @@ def render_sidebar() -> SidebarSettings:
             step=1,
             help="Dodaje przesunięcie do czasu serwera, aby wyświetlać prawidłowy czas lokalny"
         )
-        st.subheader("💰 Cena energii elektrycznej")
+        st.subheader("💰 Ceny energii")
+        saved_el_price = float(get_setting("electricity_price", "1.10"))
+        saved_gas_price = float(get_setting("gas_price", "0.37"))
+
         electricity_price = st.number_input(
             "Cena prądu [zł/kWh]",
             min_value=0.0,
             max_value=5.0,
-            value=1.00,
+            value=saved_el_price,
             step=0.01,
             help="Cena energii elektrycznej używana do obliczeń kosztów eksploatacji pompy ciepła"
         )
+        gas_price = st.number_input(
+            "Cena gazu [zł/kWh]",
+            min_value=0.0,
+            max_value=5.0,
+            value=saved_gas_price,
+            step=0.01,
+            help="Cena gazu używana do porównania kosztów (próg opłacalności SCOP)"
+        )
+
+        if electricity_price != saved_el_price:
+            set_setting("electricity_price", str(electricity_price))
+        if gas_price != saved_gas_price:
+            set_setting("gas_price", str(gas_price))
 
     # Tryb pracy pompy — na dole panelu bocznego
     st.sidebar.markdown("---")
@@ -143,4 +160,5 @@ def render_sidebar() -> SidebarSettings:
         active_power_w=active_power_w,
         time_offset_hours=time_offset_hours,
         electricity_price=electricity_price,
+        gas_price=gas_price,
     )
