@@ -121,6 +121,19 @@ def render_sidebar() -> SidebarSettings:
         unsafe_allow_html=True,
     )
 
+    with st.sidebar.expander("ℹ️ About"):
+        st.markdown(
+            "**Heat Pump Monitor** v1.0\n\n"
+            "Monitoring pompy ciepła w czasie rzeczywistym "
+            "przez Tuya Pulsar API.\n\n"
+            "📊 SCOP, COP, bilans energetyczny\n"
+            "📈 Krzywa grzewcza, diagnostyka\n"
+            "🚨 Alerty awarii (Telegram)\n"
+            "🌤️ Korelacja z pogodą\n\n"
+            "Dane: SQLite · UI: Streamlit + Plotly\n\n"
+            "✉️ wiktor79@o2.pl"
+        )
+
     return SidebarSettings(
         hours_back=hours_back,
         selected_range=selected_range,
