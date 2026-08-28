@@ -4,8 +4,11 @@ import numpy as np
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
+from datetime import datetime
 
 from app.services.analytics import DiagnosticReport
+from app.services.database import get_fault_history, get_active_faults
+from app.config import HEAT_PUMP_DEV_ID
 
 
 def render(
@@ -28,6 +31,9 @@ def render(
 
     st.markdown("---")
     _render_standard_diagnostics(df_pivot, daily_df_all)
+
+    st.markdown("---")
+    _render_fault_history()
 
 
 def _render_advanced_diagnostics(df_pivot: pd.DataFrame, report: DiagnosticReport):
@@ -205,3 +211,52 @@ def _render_standard_diagnostics(df_pivot: pd.DataFrame, daily_df_all: pd.DataFr
     fig_disc.add_hline(y=90.0, line_dash="dash", line_color="Red", annotation_text="Krytyczne 90°C", annotation_position="bottom right")
     fig_disc.update_layout(hovermode="x unified", xaxis_title="Czas", yaxis_title="Wartość")
     st.plotly_chart(fig_disc, width="stretch")
+
+
+
+def _render_fault_history():
+    """Sekcja historii awarii pompy."""
+    st.subheader("🚨 Historia Awarii")
+
+    # Aktywne awarie
+    active = get_active_faults(HEAT_PUMP_DEV_ID)
+    if active:
+        st.error(f"**{len(active)} aktywnych awarii:**")
+        for _, ts, code, bitmap in active:
+            ts_str = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+            st.markdown(f"- 🔴 **{code}** — od {ts_str}")
+    else:
+        st.success("✅ Brak aktywnych awarii")
+
+    # Historia
+    history = get_fault_history(HEAT_PUMP_DEV_ID, limit=50)
+    if history:
+        rows = []
+        for _, ts, code, bitmap, resolved, resolved_at in history:
+            ts_str = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+            if resolved and resolved_at:
+                res_str = datetime.fromtimestamp(resolved_at).strftime("%Y-%m-%d %H:%M")
+                duration_sec = resolved_at - ts
+                if duration_sec < 60:
+                    dur_str = f"{duration_sec:.0f} s"
+                elif duration_sec < 3600:
+                    dur_str = f"{duration_sec / 60:.0f} min"
+                else:
+                    dur_str = f"{duration_sec / 3600:.1f} h"
+                status = "✅ Rozwiązana"
+            else:
+                res_str = "—"
+                dur_str = "trwa..."
+                status = "🔴 Aktywna"
+            rows.append({
+                "Status": status,
+                "Kod": code,
+                "Początek": ts_str,
+                "Koniec": res_str,
+                "Czas trwania": dur_str,
+            })
+
+        history_df = pd.DataFrame(rows)
+        st.dataframe(history_df, width="stretch", hide_index=True)
+    else:
+        st.info("Brak zarejestrowanych awarii w historii.")

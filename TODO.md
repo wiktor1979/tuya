@@ -20,6 +20,7 @@
   - Awarii / błędów pompy
   - Spadku COP poniżej progu
   - Ekstremalnych warunków pracy
+- [x] Logowanie kodów błędów pompy (fault bitmap E01-E16/P01-P14, tabela fault_log, alert na dashboardzie)
 - [ ] Integracja z systemami fotowoltaicznymi (analiza nadwyżek energii)
 - [ ] Webhooki dla zdarzeń krytycznych
 - [ ] Integracja z Google Sheets / Excel Online
@@ -51,7 +52,7 @@
 ## Priorytety
 ### Wysoki priorytet (krótkoterminowe)
 1. Wykres zależności COP od temperatury zewnętrznej
-2. Powiadomienia o awariach i niskim COP
+2. Powiadomienia Telegram o awariach i niskim COP
 3. Responsywny dashboard mobilny
 4. Analiza pracy grzałek elektrycznych
 
@@ -60,6 +61,7 @@
 2. Integracja z Home Assistant
 3. Porównania okresów (YoY/MoM)
 4. Archiwalne dane pogodowe i HDD
+5. Wykrywanie utraty komunikacji z pompą
 
 ### Niski priorytet (długoterminowe)
 1. Modele ML do predykcji
@@ -69,4 +71,4 @@
 
 ---
 *Data utworzenia: 2025*
-*Ostatnia aktualizacja: 2025*
+*Ostatnia aktualizacja: 2026-08-28*

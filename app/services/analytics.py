@@ -3,6 +3,32 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple, Optional
 from datetime import datetime, timedelta
+
+from app.config import FAULT_BITMAP_LABELS
+
+
+def decode_fault_bitmap(fault_value: float) -> List[str]:
+    """
+    Dekoduje bitmapę fault na listę aktywnych kodów błędów.
+    
+    Bitmapa ma 30 bitów: E01-E16 (bit 0-15), P01-P14 (bit 16-29).
+    Wartość 0 = brak błędów, >0 = jeden lub więcej aktywnych błędów.
+    
+    Args:
+        fault_value: wartość numeryczna bitmapy fault
+    
+    Returns:
+        Lista aktywnych kodów błędów, np. ["E03", "P02"]
+    """
+    if fault_value is None or fault_value == 0:
+        return []
+    
+    bitmap = int(fault_value)
+    active_faults = []
+    for i, label in enumerate(FAULT_BITMAP_LABELS):
+        if bitmap & (1 << i):
+            active_faults.append(label)
+    return active_faults
 from dataclasses import dataclass, field
 
 
@@ -576,3 +602,346 @@ def generate_diagnostic_report(
         estimated_annual_cost=annual_cost,
         recommendations=recommendations
     )
+
+
+# ==============================================================================
+# ANALIZA KRZYWEJ GRZEWCZEJ — DORADCA
+# ==============================================================================
+
+@dataclass
+class HeatingCurveBin:
+    """Wyniki analizy dla jednego przedziału temperaturowego."""
+    temp_min: float
+    temp_max: float
+    duty_cycle_pct: float
+    avg_heat_temp_set: float
+    avg_cop: float
+    total_hours_co: float
+    avg_comp_freq: float
+    avg_radiation: Optional[float]  # W/m², None jeśli brak danych
+    stop_reason_thermostat_pct: float  # % zatrzymań przez termostat (out < set)
+    sufficient_data: bool
+
+
+@dataclass
+class HeatingCurveAnalysis:
+    """Kompletna analiza krzywej grzewczej."""
+    bins: List[HeatingCurveBin]
+    temp_range_sufficient: bool  # czy rozrzut temp >= 5°C
+    temp_min_observed: float
+    temp_max_observed: float
+    estimated_slope: Optional[float]  # °C nastawy / °C powietrza
+    recommendation: Optional[str]
+    recommendation_detail: Optional[str]
+    curve_low_current: Optional[float]  # nastawa przy -10 z formularza
+    curve_high_current: Optional[float]  # nastawa przy +20 z formularza
+
+
+def analyze_heating_curve(
+    df_pivot: pd.DataFrame,
+    weather_df: pd.DataFrame = None,
+    curve_low: float = None,
+    curve_high: float = None,
+    bin_size: float = 3.0,
+    min_hours_per_bin: float = 4.0,
+    target_duty_cycle: float = 85.0,
+) -> Optional[HeatingCurveAnalysis]:
+    """
+    Analizuje krzywą grzewczą na podstawie duty cycle sprężarki w trybie CO.
+    
+    Args:
+        df_pivot: DataFrame z przetworzoną telemetrią (wymaga: amb_temp, comp_freq, Tryb, 
+                  heat_temp_set, out_water_temp, COP, czas)
+        weather_df: DataFrame pogodowy z kolumnami direct_radiation, diffuse_radiation
+        curve_low: nastawa temp. wody przy -10°C (z formularza użytkownika)
+        curve_high: nastawa temp. wody przy +20°C (z formularza użytkownika)
+        bin_size: szerokość przedziału temperaturowego [°C]
+        min_hours_per_bin: min. godzin danych CO aby bin był wiarygodny
+        target_duty_cycle: docelowy duty cycle [%]
+    
+    Returns:
+        HeatingCurveAnalysis lub None jeśli brak danych
+    """
+    required_cols = {'amb_temp', 'comp_freq', 'Tryb', 'heat_temp_set', 'out_water_temp', 'COP', 'czas'}
+    if df_pivot is None or df_pivot.empty or not required_cols.issubset(df_pivot.columns):
+        return None
+
+    # Filtruj tylko tryb CO
+    co_df = df_pivot[df_pivot['Tryb'] == 'CO'].copy()
+    if co_df.empty or co_df['amb_temp'].isna().all():
+        return None
+
+    # Pomijaj okresy gdy TYLKO strefa 2 grzeje (zone_select=2) — ma stałą nastawę,
+    # nie jest sterowana krzywą grzewczą. Analizujemy zone_select 1 (Z1) i 3 (obie).
+    # Gdy brak kolumny zone_select — analizuj wszystko (wsteczna kompatybilność).
+    if 'zone_select' in co_df.columns and co_df['zone_select'].notna().any():
+        co_df = co_df[co_df['zone_select'] != 2].copy()
+        if co_df.empty:
+            return None
+
+    co_df['czas'] = pd.to_datetime(co_df['czas'])
+    
+    # Sprawdź rozrzut temperatur
+    temp_min_obs = co_df['amb_temp'].min()
+    temp_max_obs = co_df['amb_temp'].max()
+    temp_range_ok = (temp_max_obs - temp_min_obs) >= 5.0
+
+    # Dołącz nasłonecznienie z weather_df (jeśli dostępne)
+    co_df['total_radiation'] = np.nan
+    if weather_df is not None and not weather_df.empty:
+        rad_cols = []
+        if 'direct_radiation' in weather_df.columns:
+            rad_cols.append('direct_radiation')
+        if 'diffuse_radiation' in weather_df.columns:
+            rad_cols.append('diffuse_radiation')
+        
+        if rad_cols:
+            w_df = weather_df.copy()
+            if 'timestamp' in w_df.columns:
+                w_df['czas_w'] = pd.to_datetime(w_df['timestamp'], unit='s', utc=True).dt.tz_localize(None)
+            elif 'czas' in w_df.columns:
+                w_df['czas_w'] = pd.to_datetime(w_df['czas'])
+            else:
+                w_df = None
+            
+            if w_df is not None:
+                # Sumuj direct + diffuse
+                total_rad = w_df[rad_cols].sum(axis=1)
+                w_rad = pd.DataFrame({'czas_w': w_df['czas_w'], 'total_radiation': total_rad})
+                w_rad = w_rad.set_index('czas_w').sort_index()
+                
+                # merge_asof - najbliższy pomiar pogodowy do każdego rekordu telemetrii
+                co_df = co_df.sort_values('czas')
+                co_df['czas'] = pd.to_datetime(co_df['czas']).dt.as_unit('s')
+                w_rad.index = w_rad.index.as_unit('s')
+                co_df = pd.merge_asof(
+                    co_df, w_rad,
+                    left_on='czas', right_index=True,
+                    direction='nearest',
+                    tolerance=pd.Timedelta('2h'),
+                    suffixes=('', '_weather')
+                )
+                if 'total_radiation_weather' in co_df.columns:
+                    co_df['total_radiation'] = co_df['total_radiation_weather']
+
+    # Tworzenie binów temperaturowych
+    bin_start = np.floor(temp_min_obs / bin_size) * bin_size
+    bin_end = np.ceil(temp_max_obs / bin_size) * bin_size
+    bin_edges = np.arange(bin_start, bin_end + bin_size, bin_size)
+
+    bins_result = []
+    for i in range(len(bin_edges) - 1):
+        b_min, b_max = bin_edges[i], bin_edges[i + 1]
+        mask = (co_df['amb_temp'] >= b_min) & (co_df['amb_temp'] < b_max)
+        bin_data = co_df[mask]
+
+        if bin_data.empty:
+            continue
+
+        # Oblicz czas w binie (szacowanie z interwałów między próbkami)
+        if len(bin_data) > 1:
+            dt_sec = bin_data['czas'].diff().dt.total_seconds().median()
+            total_hours = len(bin_data) * dt_sec / 3600.0
+        else:
+            total_hours = 0.1
+
+        sufficient = total_hours >= min_hours_per_bin
+
+        # Duty cycle: % czasu gdy sprężarka pracuje
+        compressor_on = (bin_data['comp_freq'] > 5).sum()
+        duty_cycle = (compressor_on / len(bin_data)) * 100.0 if len(bin_data) > 0 else 0.0
+
+        # Średnie wartości
+        avg_heat_set = bin_data['heat_temp_set'].mean()
+        avg_cop = bin_data.loc[bin_data['COP'].notna() & (bin_data['COP'] > 0), 'COP'].mean()
+        avg_comp_freq = bin_data.loc[bin_data['comp_freq'] > 5, 'comp_freq'].mean()
+        
+        # Nasłonecznienie
+        avg_rad = None
+        if bin_data['total_radiation'].notna().any():
+            avg_rad = bin_data['total_radiation'].mean()
+
+        # Analiza przyczyn zatrzymań: out_water_temp < heat_temp_set przy zatrzymaniu
+        # = termostat pokojowy odciął (dom ciepły, krzywa za stroma)
+        stops = bin_data[
+            (bin_data['comp_freq'] <= 5) & 
+            (bin_data['comp_freq'].shift(1) > 5)
+        ]
+        thermostat_stops = 0
+        total_stops = len(stops)
+        if total_stops > 0:
+            thermostat_stops = (stops['out_water_temp'] < stops['heat_temp_set'] - 1.0).sum()
+        thermostat_pct = (thermostat_stops / total_stops * 100.0) if total_stops > 0 else 0.0
+
+        bins_result.append(HeatingCurveBin(
+            temp_min=b_min,
+            temp_max=b_max,
+            duty_cycle_pct=duty_cycle,
+            avg_heat_temp_set=avg_heat_set if pd.notna(avg_heat_set) else 0.0,
+            avg_cop=avg_cop if pd.notna(avg_cop) else 0.0,
+            total_hours_co=total_hours,
+            avg_comp_freq=avg_comp_freq if pd.notna(avg_comp_freq) else 0.0,
+            avg_radiation=avg_rad,
+            stop_reason_thermostat_pct=thermostat_pct,
+            sufficient_data=sufficient,
+        ))
+
+    if not bins_result:
+        return None
+
+    # Estymacja nachylenia krzywej z danych
+    valid_bins = [b for b in bins_result if b.sufficient_data and b.avg_heat_temp_set > 0]
+    slope = None
+    if len(valid_bins) >= 2:
+        temps = [(b.temp_min + b.temp_max) / 2 for b in valid_bins]
+        sets = [b.avg_heat_temp_set for b in valid_bins]
+        if len(set(temps)) >= 2:
+            slope = np.polyfit(temps, sets, 1)[0]
+
+    # Generuj rekomendację
+    recommendation, detail = _generate_curve_recommendation(
+        bins_result, curve_low, curve_high, target_duty_cycle, slope
+    )
+
+    return HeatingCurveAnalysis(
+        bins=bins_result,
+        temp_range_sufficient=temp_range_ok,
+        temp_min_observed=temp_min_obs,
+        temp_max_observed=temp_max_obs,
+        estimated_slope=slope,
+        recommendation=recommendation,
+        recommendation_detail=detail,
+        curve_low_current=curve_low,
+        curve_high_current=curve_high,
+    )
+
+
+def _generate_curve_recommendation(
+    bins: List[HeatingCurveBin],
+    curve_low: float,
+    curve_high: float,
+    target_duty_cycle: float,
+    slope: float,
+) -> Tuple[Optional[str], Optional[str]]:
+    """Generuje rekomendację zmiany krzywej na podstawie duty cycle w binach."""
+    valid_bins = [b for b in bins if b.sufficient_data]
+    if not valid_bins:
+        return None, "Za mało danych do analizy. Potrzeba minimum 4 godzin pracy CO w danym zakresie temperatur."
+
+    # Wykryj poza-sezon: jeśli duty cycle < 5% we wszystkich binach, pompa nie grzeje
+    max_duty = max(b.duty_cycle_pct for b in valid_bins)
+    if max_duty < 5.0:
+        return (
+            "ℹ️ Pompa prawie nie pracuje w trybie CO w wybranym okresie",
+            "Duty cycle < 5% we wszystkich zakresach temperatur. "
+            "Prawdopodobnie poza sezonem grzewczym — analiza krzywej wymaga danych z okresu ogrzewania."
+        )
+
+    # Podziel na strefę niską i wysoką (podział: mediana obserwowanych temperatur)
+    mid_temp = np.median([(b.temp_min + b.temp_max) / 2 for b in valid_bins])
+    
+    low_bins = [b for b in valid_bins if (b.temp_min + b.temp_max) / 2 <= mid_temp]
+    high_bins = [b for b in valid_bins if (b.temp_min + b.temp_max) / 2 > mid_temp]
+
+    def weighted_duty(bin_list):
+        if not bin_list:
+            return None
+        total_h = sum(b.total_hours_co for b in bin_list)
+        if total_h == 0:
+            return None
+        return sum(b.duty_cycle_pct * b.total_hours_co for b in bin_list) / total_h
+
+    def weighted_comp_freq(bin_list):
+        if not bin_list:
+            return None
+        total_h = sum(b.total_hours_co for b in bin_list)
+        if total_h == 0:
+            return None
+        return sum(b.avg_comp_freq * b.total_hours_co for b in bin_list) / total_h
+
+    def has_solar_influence(bin_list):
+        """Sprawdza czy niski duty cycle koreluje z wysokim nasłonecznieniem."""
+        for b in bin_list:
+            if b.avg_radiation is not None and b.avg_radiation > 200 and b.duty_cycle_pct < target_duty_cycle:
+                return True
+        return False
+
+    duty_low = weighted_duty(low_bins)
+    duty_high = weighted_duty(high_bins)
+    comp_low = weighted_comp_freq(low_bins)
+
+    # Estymacja sugerowanej korekty
+    def suggest_delta(duty_cycle):
+        """Ile °C obniżyć nastawę przy danym duty cycle."""
+        if duty_cycle is None:
+            return 0
+        gap = target_duty_cycle - duty_cycle
+        if gap <= 0:
+            return 0
+        # ~1°C obniżenia = ~7pp duty cycle (estymacja)
+        return round(gap / 7.0)
+
+    # Logika decyzyjna
+    low_ok = duty_low is None or duty_low >= target_duty_cycle * 0.85  # 15% tolerancja
+    high_ok = duty_high is None or duty_high >= target_duty_cycle * 0.85
+    low_overloaded = comp_low is not None and comp_low > 80  # sprężarka prawie na max
+    solar_high = has_solar_influence(high_bins) if high_bins else False
+
+    if low_ok and high_ok:
+        return "✅ Krzywa grzewcza ustawiona prawidłowo", (
+            f"Duty cycle w normie we wszystkich zakresach temperatur. "
+            f"Pompa pracuje optymalnie."
+        )
+
+    parts = []
+    detail_parts = []
+
+    if not low_ok and not low_overloaded:
+        delta = suggest_delta(duty_low)
+        temp_label = "-10°C"
+        if curve_low is not None and delta > 0:
+            parts.append(f"Obniż nastawę dla {temp_label} z {curve_low:.0f}°C na ~{curve_low - delta:.0f}°C")
+        elif delta > 0:
+            parts.append(f"Obniż nastawę dla {temp_label} o ~{delta}°C")
+        detail_parts.append(
+            f"Strefa mrozu: duty cycle {duty_low:.0f}% (cel: {target_duty_cycle:.0f}%). "
+            f"Pompa zbyt często stoi — nastawa za wysoka."
+        )
+
+    if low_overloaded:
+        if curve_low is not None:
+            parts.append(f"Podnieś nastawę dla -10°C z {curve_low:.0f}°C o 1-2°C")
+        else:
+            parts.append("Podnieś nastawę dla -10°C o 1-2°C")
+        detail_parts.append(
+            f"Strefa mrozu: sprężarka pracuje na wysokich obrotach (śr. {comp_low:.0f} Hz). "
+            f"Pompa może nie nadążać — nastawa za niska."
+        )
+
+    if not high_ok:
+        delta = suggest_delta(duty_high)
+        temp_label = "+20°C"
+        solar_note = ""
+        if solar_high:
+            delta = max(delta - 1, 1)  # Zmniejsz korektę o 1°C
+            solar_note = " ☀️ Częściowo spowodowane zyskami solarnymi — efekt zmiany może być mniejszy."
+        
+        if curve_high is not None and delta > 0:
+            parts.append(f"Obniż nastawę dla {temp_label} z {curve_high:.0f}°C na ~{curve_high - delta:.0f}°C")
+        elif delta > 0:
+            parts.append(f"Obniż nastawę dla {temp_label} o ~{delta}°C")
+        detail_parts.append(
+            f"Strefa ciepła: duty cycle {duty_high:.0f}% (cel: {target_duty_cycle:.0f}%). "
+            f"Pompa zbyt często stoi — nastawa za wysoka.{solar_note}"
+        )
+
+    if not parts:
+        return None, "Brak jednoznacznej rekomendacji przy dostępnych danych."
+
+    recommendation = "🔧 " + " | ".join(parts)
+    detail = "\n".join(detail_parts) + (
+        "\n\n⚠️ To estymacja. Po zmianie krzywej sprawdź efekt po kilku dniach "
+        "i zaktualizuj wartości w formularzu."
+    )
+
+    return recommendation, detail

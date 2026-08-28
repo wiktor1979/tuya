@@ -6,6 +6,9 @@ import plotly.express as px
 
 from app.ui.styles import PARAM_INFO, get_param_label
 from app.services.data_loader import apply_time_correction
+from app.services.database import get_active_faults, get_current_fault_value
+from app.services.analytics import decode_fault_bitmap
+from app.config import HEAT_PUMP_DEV_ID
 
 
 def render(df: pd.DataFrame, df_pivot: pd.DataFrame, resample_rule, time_offset_hours: int):
@@ -13,6 +16,18 @@ def render(df: pd.DataFrame, df_pivot: pd.DataFrame, resample_rule, time_offset_
     if df.empty or df_pivot is None or df_pivot.empty:
         st.info("Brak danych telemetrycznych pompy w wybranym oknie czasowym.")
         return
+
+    # --- Alert awarii — czerwony banner na samej górze ---
+    fault_val = get_current_fault_value(HEAT_PUMP_DEV_ID)
+    active_fault_codes = decode_fault_bitmap(fault_val) if fault_val else []
+    active_faults_db = get_active_faults(HEAT_PUMP_DEV_ID)
+
+    # Połącz kody z bitmapy i z bazy (na wypadek gdyby bitmapa była 0 ale w bazie są nierozwiązane)
+    all_active_codes = list(set(active_fault_codes + [r[2] for r in active_faults_db]))
+
+    if all_active_codes:
+        codes_str = ", ".join(sorted(all_active_codes))
+        st.error(f"🚨 **AWARIA POMPY** — aktywne kody błędów: **{codes_str}**")
 
     # Aktualne wartości
     latest_df = df.drop_duplicates(subset=["code"], keep="last")
@@ -22,7 +37,11 @@ def render(df: pd.DataFrame, df_pivot: pd.DataFrame, resample_rule, time_offset_
         if not row.empty:
             v_num = row["val_num"].values[0]
             if pd.notnull(v_num):
-                return f"{v_num} °C" if "temp" in c or c in ["tidr", "back_temp", "heat_temp_set"] else f"{v_num}"
+                # heat_temp_set_z2: stare dane w bazie mogą być niedzielone (350 zamiast 35.0)
+                # — TEMP_CODES dodane dopiero teraz, historyczne rekordy nie mają konwersji
+                if c == "heat_temp_set_z2" and v_num > 100:
+                    v_num = v_num / 10.0
+                return f"{v_num} °C" if "temp" in c or c in ["tidr", "back_temp", "heat_temp_set", "heat_temp_set_z2", "hot_water_temp_set"] else f"{v_num}"
             return str(row["val_str"].values[0])
         return "N/A"
 
@@ -32,17 +51,61 @@ def render(df: pd.DataFrame, df_pivot: pd.DataFrame, resample_rule, time_offset_
     latest_flow = df_pivot["flow_m3h"].iloc[-1] if not df_pivot.empty else 0.0
     current_mode = df_pivot["Tryb"].iloc[-1] if not df_pivot.empty else "CO"
 
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
     c1.metric("Woda CWU", get_val("tank_temp"))
-    c2.metric("Powrót CO", get_val("in_water_temp"))
-    c3.metric("Zasilanie CO", get_val("out_water_temp"))
-    c4.metric("🎯 Nastawa CO", get_val("heat_temp_set"))
-    c5.metric("Przepływ", f"{latest_flow:.1f} m³/h", delta=f"{latest_flow * 1000 / 60:.1f} L/min")
-    c6.metric("📊 Chwilowe COP", f"{latest_cop:.2f}", delta=f"Tryb: {current_mode}")
+    c2.metric("🎯 Zadana CWU", get_val("hot_water_temp_set"))
+    c3.metric("Powrót CO", get_val("in_water_temp"))
+    c4.metric("Zasilanie CO", get_val("out_water_temp"))
+
+    # Nastawa CO — zależna od aktywnej strefy
+    zone_row = latest_df[latest_df["code"] == "zone_select"]
+    zone_val = None
+    if not zone_row.empty:
+        z_str = str(zone_row["val_str"].values[0])
+        try:
+            zone_val = int(float(z_str))
+        except (ValueError, TypeError):
+            zone_val = None
+
+    if zone_val == 2:
+        # Tylko strefa 2 (podłogówka) — pokazuj heat_temp_set_z2
+        co_set_label = "🎯 Nastawa Z2"
+        co_set_val = get_val("heat_temp_set_z2")
+    elif zone_val == 3:
+        # Obie strefy — pokazuj obie nastawy
+        co_set_label = "🎯 Nastawa Z1+Z2"
+        v1 = get_val("heat_temp_set")
+        v2 = get_val("heat_temp_set_z2")
+        co_set_val = f"{v1}/{v2}"
+    else:
+        # Strefa 1 lub brak danych — domyślnie heat_temp_set
+        co_set_label = "🎯 Nastawa CO"
+        co_set_val = get_val("heat_temp_set")
+
+    c5.metric(co_set_label, co_set_val)
+    c6.metric("Przepływ", f"{latest_flow:.1f} m³/h", delta=f"{latest_flow * 1000 / 60:.1f} L/min")
+    c7.metric("📊 Chwilowe COP", f"{latest_cop:.2f}", delta=f"Tryb: {current_mode}")
 
     cp1, cp2 = st.columns(2)
     cp1.metric("🔥 Moc cieplna (P_th)", f"{latest_p_th:.2f} kW")
     cp2.metric("⚡ Pobór prądu (P_el)", f"{latest_p_el:.2f} kW")
+
+    # Tryby specjalne — widoczne tylko gdy aktywne
+    def is_mode_active(code):
+        row = latest_df[latest_df["code"] == code]
+        if not row.empty:
+            val = str(row["val_str"].values[0]).lower()
+            return val in ("true", "1", "1.0")
+        return False
+
+    active_modes = []
+    if is_mode_active("holiday_sw"):
+        active_modes.append("🏖️ **Tryb Holiday** — pompa pracuje w trybie urlopowym (obniżona temperatura)")
+    if is_mode_active("mute"):
+        active_modes.append("🔇 **Tryb Silent** — pompa pracuje w trybie cichym (ograniczona moc)")
+
+    if active_modes:
+        st.warning(" · ".join(active_modes))
 
     st.markdown("---")
     st.subheader("📈 Przebieg wybranych parametrów")

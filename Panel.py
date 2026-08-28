@@ -48,7 +48,7 @@ def render_dashboard(settings):
     st.caption(f"{status_icon} {status_text} · Odświeżono: {now_str}")
 
     # --- ŁADOWANIE DANYCH ---
-    is_today_range = (settings.selected_range == "1 dzień")
+    is_today_range = (settings.selected_range == "Dzisiaj")
     df = load_pump_data(settings.hours_back, is_today=is_today_range)
     df_all_time = load_pump_data(settings.hours_back, all_time=True)
 
@@ -77,9 +77,9 @@ def render_dashboard(settings):
     weather_df = pd.DataFrame()
     if df_pivot is not None and not df_pivot.empty:
         try:
-            weather_data = get_weather_data(days=30, is_today=is_today_range)
+            weather_data = get_weather_data(days=max(30, settings.hours_back // 24 + 1), is_today=is_today_range)
             if weather_data and len(weather_data) > 0 and len(weather_data[0]) >= 8:
-                weather_df = pd.DataFrame(weather_data, columns=['id', 'timestamp', 'temperature', 'humidity', 'windspeed', 'precipitation', 'latitude', 'longitude'])
+                weather_df = pd.DataFrame(weather_data, columns=['id', 'timestamp', 'temperature', 'humidity', 'windspeed', 'precipitation', 'latitude', 'longitude', 'direct_radiation', 'diffuse_radiation'][:len(weather_data[0])])
                 weather_df = weather_df.rename(columns={'windspeed': 'wind_speed'})
                 if 'pressure' not in weather_df.columns:
                     weather_df['pressure'] = 1013.0

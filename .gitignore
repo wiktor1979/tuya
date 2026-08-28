@@ -27,10 +27,9 @@ Thumbs.db
 dist/
 build/
 *.egg-info/
-<<<<<<< Updated upstream
 tuya_telemetry.db-wal
 tuya_telemetry.db-shm
-=======
-tuya_telemetry.db-shm
-tuya_telemetry.db-wal
->>>>>>> Stashed changes
+start_local.bat
+/data
+/__pycache__
+/app/__pycache__

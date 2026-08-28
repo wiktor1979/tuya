@@ -1,13 +1,13 @@
 """Konfiguracja aplikacji - zmienne środowiskowe i stałe."""
 import os
 from dotenv import load_dotenv
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
 load_dotenv()
 
 # Konfiguracja Tuya Pulsar (EU) - obsługa wielu kont
 # Format: lista słowników z kluczami: access_id, access_key, devices (lista ID urządzeń)
-TUYA_ACCOUNTS: List[Dict[str, any]] = []
+TUYA_ACCOUNTS: List[Dict[str, Any]] = []
 
 # Pobierz konfigurację z environment variables (dla wstecznej kompatybilności)
 single_access_id = os.environ.get("TUYA_ACCESS_ID")
@@ -38,7 +38,7 @@ MQ_ENV_PROD = "event"
 PULSAR_SERVER_EU = "pulsar+ssl://mqe.tuyaeu.com:7285/"
 
 # Baza danych
-DB_FILE = "./tuya_telemetry.db"
+DB_FILE = "./data/tuya_telemetry.db"
 
 # Domyślne ID urządzenia (dla wstecznej kompatybilności)
 HEAT_PUMP_DEV_ID = "bf874f7ae72aca1fc23op0"
@@ -48,7 +48,10 @@ MANUAL_METER_DEV_ID = "licznikRęczny"
 TEMP_CODES = {
     "in_water_temp", "out_water_temp", "tank_temp", 
     "amb_temp", "disc_temp", "back_temp", "tidr",
-    "cool_temp_set", "heat_temp_set", "hot_water_temp_set"
+    "cool_temp_set", "heat_temp_set", "hot_water_temp_set",
+    "heat_temp_set_z2", "cool_temp_set_z2",
+    "auto_heat_temp_set_z1", "auto_heat_temp_set_z2", "auto_cool_temp_set_z2",
+    "idr_temp_set",
 }
 
 # Konfiguracja histerezy dynamicznej
@@ -93,23 +96,88 @@ LATITUDE = float(os.environ.get("LATITUDE", 51.7592))  # Łódź
 LONGITUDE = float(os.environ.get("LONGITUDE", 19.4560))  # Łódź
 LOCATION_NAME = os.environ.get("LOCATION_NAME", "Łódź")
 
-# Metadane parametrów pompy
+# Konfiguracja powiadomień Telegram (opcjonalne — brak = wyłączone)
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+TELEGRAM_ENABLED = bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)
+DAILY_REPORT_HOUR = int(os.environ.get("DAILY_REPORT_HOUR", 21))  # godzina raportu dziennego (czas lokalny)
+SERVER_TIMEZONE_OFFSET = int(os.environ.get("SERVER_TIMEZONE_OFFSET", 0))  # przesunięcie serwera vs czas lokalny (np. -2 gdy serwer UTC, użytkownik UTC+2)
+
+# Metadane parametrów pompy — na podstawie oficjalnej specyfikacji modelu Tuya (model 0000043th5)
 PARAM_INFO = {
+    # Temperatury hydrauliczne
     "in_water_temp": {"label": "Powrót CO", "desc": "Temperatura wody powracającej z instalacji grzewczej"},
     "out_water_temp": {"label": "Zasilanie CO", "desc": "Temperatura wody wychodzącej na dom"},
     "tank_temp": {"label": "Woda CWU", "desc": "Temperatura wody w zasobniku ciepłej wody użytkowej"},
     "amb_temp": {"label": "Temp. zewnętrzna", "desc": "Temperatura powietrza na zewnątrz budynku"},
-    "disc_temp": {"label": "Tłoczenie sprężarki", "desc": "Temperatura gazy na wylocie/tłoczeniu sprężarki (Discharge)"},
-    "back_temp": {"label": "Powrót do sprężarki", "desc": "Temperatura czynnika na powrocie do sprężarki (Suction)"},
-    "tidr": {"label": "Temp. ssania", "desc": "Temperatura czujnika ssania / wymiennika chłodniczego"},
-    "heat_temp_set": {"label": "Nastawa CO", "desc": "Docelowa zadana temperatura dla trybu ogrzewania CO"},
-    "cool_temp_set": {"label": "Nastawa Chłodzenia", "desc": "Docelowa zadana temperatura dla trybu chłodzenia"},
-    "hot_water_temp_set": {"label": "Nastawa CWU", "desc": "Docelowa zadana temperatura dla wody użytkowej"},
-    "ac_vol": {"label": "Napięcie AC", "desc": "Napięcie zasilania sieciowego AC podawane do jednostki"},
-    "ac_curr": {"label": "Prąd AC", "desc": "Natężenie prądu pobieranego przez urządzenie"},
-    "comp_freq": {"label": "Częstotliwość sprężarki", "desc": "Aktualna częstotliwość pracy sprężarki (Hz)"},
-    "flow_rate": {"label": "Przepływ", "desc": "Przepływ wody w obiegu hydraulicznym"},
-    "m_eev": {"label": "Zawór EEV główny", "desc": "Pozycja otwarcia głównego elektronicznego zaworu rozprężnego"},
-    "valve": {"label": "Zawór 3-drożny", "desc": "Stan zaworu przełączającego (0 = CO, 1 = CWU)"},
-    "defrost": {"label": "Odszranianie", "desc": "Cykl automatycznego odszraniania parownika"}
+
+    # Temperatury układu chłodniczego
+    "disc_temp": {"label": "Tłoczenie sprężarki", "desc": "Temperatura gazu na wylocie sprężarki"},
+    "back_temp": {"label": "Powrót do sprężarki", "desc": "Temperatura czynnika na ssaniu sprężarki"},
+    "tidr": {"label": "Temp. pokojowa", "desc": "Temperatura wewnętrzna pomieszczenia — czujnik pokojowy"},
+
+    # Nastawy temperatur
+    "heat_temp_set": {"label": "Nastawa CO Z1", "desc": "Zadana temperatura zasilania — tryb grzania, strefa 1"},
+    "cool_temp_set": {"label": "Nastawa chłodzenia Z1", "desc": "Zadana temperatura — tryb chłodzenia, strefa 1"},
+    "hot_water_temp_set": {"label": "Nastawa CWU", "desc": "Zadana temperatura wody użytkowej"},
+    "auto_temp_set": {"label": "Nastawa auto", "desc": "Zadana temperatura — tryb automatyczny"},
+    "heat_temp_set_z2": {"label": "Nastawa CO Z2", "desc": "Zadana temperatura zasilania — tryb grzania, strefa 2 / podłogówka"},
+    "cool_temp_set_z2": {"label": "Nastawa chłodzenia Z2", "desc": "Zadana temperatura — tryb chłodzenia, strefa 2"},
+    "auto_heat_temp_set_z1": {"label": "Auto CO Z1", "desc": "Zadana temp. grzania Z1 w trybie auto"},
+    "auto_heat_temp_set_z2": {"label": "Auto CO Z2", "desc": "Zadana temp. grzania Z2 w trybie auto"},
+    "auto_cool_temp_set_z2": {"label": "Auto chłodzenie Z2", "desc": "Zadana temp. chłodzenia Z2 w trybie auto"},
+    "idr_temp_set": {"label": "Nastawa temp. pokojowej", "desc": "Zadana temperatura pomieszczenia"},
+
+    # Parametry elektryczne i mechaniczne
+    "ac_vol": {"label": "Napięcie AC", "desc": "Napięcie zasilania sieciowego, jednostka: V"},
+    "ac_curr": {"label": "Prąd AC", "desc": "Natężenie prądu pobieranego, skala ×0.1 A"},
+    "comp_freq": {"label": "Częstotliwość sprężarki", "desc": "Aktualna częstotliwość pracy sprężarki, max 120 Hz"},
+    "flow_rate": {"label": "Przepływ", "desc": "Przepływ wody w obiegu hydraulicznym, skala ×0.1 m³/h"},
+    "m_eev": {"label": "Zawór EEV główny", "desc": "Pozycja głównego elektronicznego zaworu rozprężnego, 0-480 kroków"},
+    "a_eev": {"label": "Zawór EEV dodatkowy", "desc": "Pozycja dodatkowego elektronicznego zaworu rozprężnego, 0-480 kroków"},
+    "dc_fan1": {"label": "Wentylator DC 1", "desc": "Obroty wentylatora DC jednostki zewnętrznej, 0-1000 RPM"},
+    "dc_fan2": {"label": "Wentylator DC 2", "desc": "Obroty drugiego wentylatora DC, 0-1000 RPM"},
+    "ac_fan": {"label": "Wentylator AC", "desc": "Status wentylatora AC: close / low_spd / high_spd"},
+
+    # Flagi binarne i statusy
+    "switch": {"label": "Włącznik", "desc": "Główny wyłącznik pompy"},
+    "defrost": {"label": "Odszranianie", "desc": "Cykl automatycznego odszraniania parownika"},
+    "freeze": {"label": "Ochrona antyzamrożeniowa", "desc": "Flaga aktywacji ochrony przed zamarzaniem"},
+    "valve": {"label": "Zawór 3-drożny", "desc": "Stan zaworu 3-drożnego przełączającego CO/CWU"},
+    "pump_sta": {"label": "Pompa obiegowa", "desc": "Status pompy obiegowej wody"},
+    "protect_flag": {"label": "Flaga ochrony", "desc": "Aktywna ochrona urządzenia"},
+    "fault_flag": {"label": "Flaga awarii", "desc": "Znacznik wystąpienia usterki"},
+    "mute": {"label": "Tryb cichy", "desc": "Tryb Silent — ograniczona moc"},
+    "holiday_sw": {"label": "Tryb urlopowy", "desc": "Funkcja Holiday — obniżona temperatura"},
+
+    # Tryb pracy i strefy
+    "work_mode": {"label": "Tryb pracy", "desc": "Tryb pracy pompy: cool, heat, auto, hot_water, cool_hot_water, heat_hot_water, auto_dhw"},
+    "zone_select": {"label": "Aktywna strefa", "desc": "Która strefa żąda grzania: 0=brak, 1=Z1, 2=Z2, 3=obie"},
+    "mode_valid": {"label": "Aktywny tryb", "desc": "Bitmaska aktywnych trybów pracy 0-7"},
+    "auto_run_tar_mode": {"label": "Cel trybu auto", "desc": "Status read-only: co pompa faktycznie robi w trybie auto — 0=chłodzenie, 1=ogrzewanie"},
+
+    # Konfiguracja termostatów i stref
+    "twc_type": {"label": "Typ termostatu", "desc": "Typ termostatu: 0-3"},
+    "no_twc_doble_zone": {"label": "Podział stref bez termostatu", "desc": "Czy dzielić na strefy bez termostatu: 0=nie, 1=tak"},
+    "no_twc_szone_run_type": {"label": "Praca 1-strefowa bez termostatu", "desc": "Tryb pracy jednej strefy bez termostatu 0-3"},
+    "no_twc_dzone_run_type": {"label": "Praca 2-strefowa bez termostatu", "desc": "Tryb pracy dwóch stref bez termostatu 0-7"},
+    "twc_szone_run_type": {"label": "Praca 1-strefowa z termostatem", "desc": "Tryb pracy jednej strefy z termostatem 0-1"},
+    "twc_dzone_run_type": {"label": "Praca 2-strefowa z termostatem", "desc": "Tryb pracy dwóch stref z termostatem 0-3"},
+
+    # Fault — bitmapa kodów błędów E01-E16, P01-P14
+    "fault": {"label": "Kody błędów", "desc": "Bitmapa błędów: E01-E16 (bit 0-15), P01-P14 (bit 16-29). 0 = brak błędów"},
 }
+
+# Mapowanie bitów fault na kody błędów (z oficjalnej specyfikacji)
+FAULT_BITMAP_LABELS = [
+    "E01", "E02", "E03", "E04", "E05", "E06", "E07", "E08",
+    "E09", "E10", "E11", "E12", "E13", "E14", "E15", "E16",
+    "P01", "P02", "P03", "P04", "P05", "P06", "P07", "P08",
+    "P09", "P10", "P11", "P12", "P13", "P14",
+]
+
+
+def get_param_label(code: str) -> str:
+    """Zwraca etykietę parametru z kodem w nawiasie."""
+    info = PARAM_INFO.get(code)
+    return f"{info['label']} ({code})" if info else code

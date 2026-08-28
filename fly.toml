@@ -8,6 +8,10 @@ primary_region = 'arn'
 
 [build]
 
+[env]
+  SERVER_TIMEZONE_OFFSET = "-2"
+  DAILY_REPORT_HOUR = "21"
+
 [[mounts]]
   source = 'tuya_data'
   destination = '/data'

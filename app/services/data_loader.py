@@ -97,8 +97,9 @@ BOOL_MAP = {
 
 NEEDED_COLS = [
     "out_water_temp", "in_water_temp", "flow_rate", "ac_vol", "ac_curr",
-    "comp_freq", "disc_temp", "amb_temp", "valve", "heat_temp_set", "defrost",
-    "m_eev", "a_eev", "dc_fan1", "freeze"
+    "comp_freq", "disc_temp", "amb_temp", "valve", "heat_temp_set", "hot_water_temp_set", "defrost",
+    "m_eev", "a_eev", "dc_fan1", "freeze",
+    "heat_temp_set_z2", "zone_select", "work_mode"
 ]
 
 RESAMPLE_AGG = {
@@ -111,12 +112,16 @@ RESAMPLE_AGG = {
     "disc_temp": "mean",
     "amb_temp": "mean",
     "heat_temp_set": "last",
+    "hot_water_temp_set": "last",
     "valve": "mean",
     "defrost": "max",
     "m_eev": "mean",
     "a_eev": "mean",
     "dc_fan1": "mean",
-    "freeze": "max"
+    "freeze": "max",
+    "heat_temp_set_z2": "last",
+    "zone_select": "last",
+    "work_mode": "last"
 }
 
 
@@ -144,6 +149,27 @@ def process_telemetry(
     df_pivot = apply_time_correction(df_pivot, time_offset_hours)
     df_pivot = df_pivot.sort_values("czas")
 
+    # Parametry stringowe (zone_select, work_mode) — nie przechodzą przez BOOL_MAP,
+    # więc dołączamy je ręcznie z oryginalnych val_str
+    STR_CODES = {"zone_select", "work_mode"}
+    for scode in STR_CODES:
+        str_rows = df[df["code"] == scode][["czas", "val_str"]].drop_duplicates(subset=["czas"], keep="last")
+        if not str_rows.empty:
+            str_rows = str_rows.rename(columns={"val_str": scode})
+            str_rows["czas"] = pd.to_datetime(str_rows["czas"])
+            str_rows = apply_time_correction(str_rows, time_offset_hours)
+            # merge_asof — dopasuj najbliższy wpis do każdego wiersza pivota
+            df_pivot = df_pivot.sort_values("czas")
+            str_rows = str_rows.sort_values("czas")
+            # Jeśli kolumna już istnieje z pivota (np. jako NaN), usuń ją
+            if scode in df_pivot.columns:
+                df_pivot = df_pivot.drop(columns=[scode])
+            df_pivot = pd.merge_asof(df_pivot, str_rows, on="czas", direction="backward")
+
+    # zone_select: konwersja string → float (0,1,2,3)
+    if "zone_select" in df_pivot.columns:
+        df_pivot["zone_select"] = pd.to_numeric(df_pivot["zone_select"], errors="coerce")
+
     for col in NEEDED_COLS:
         if col not in df_pivot.columns:
             df_pivot[col] = np.nan
@@ -151,11 +177,25 @@ def process_telemetry(
             df_pivot[col] = df_pivot[col].ffill()
 
     df_pivot["valve"] = df_pivot["valve"].fillna(0).astype(float)
+    # zone_select domyślnie 0 (brak żądania), work_mode domyślnie puste
+    if "zone_select" in df_pivot.columns:
+        df_pivot["zone_select"] = df_pivot["zone_select"].fillna(0).astype(float)
+    if "work_mode" in df_pivot.columns:
+        df_pivot["work_mode"] = df_pivot["work_mode"].ffill().fillna("")
+
+    # Korekta historycznych danych heat_temp_set_z2: przed dodaniem do TEMP_CODES
+    # wartości były zapisywane jako surowe (np. 350 zamiast 35.0)
+    if "heat_temp_set_z2" in df_pivot.columns:
+        mask_old = df_pivot["heat_temp_set_z2"] > 100
+        df_pivot.loc[mask_old, "heat_temp_set_z2"] = df_pivot.loc[mask_old, "heat_temp_set_z2"] / 10.0
 
     if resample_rule:
-        df_pivot = df_pivot.set_index("czas").resample(resample_rule).agg(RESAMPLE_AGG).reset_index()
+        # Filtruj agg dict do kolumn faktycznie obecnych w df_pivot
+        active_agg = {k: v for k, v in RESAMPLE_AGG.items() if k in df_pivot.columns}
+        df_pivot = df_pivot.set_index("czas").resample(resample_rule).agg(active_agg).reset_index()
         for col in NEEDED_COLS:
-            df_pivot[col] = df_pivot[col].ffill()
+            if col in df_pivot.columns:
+                df_pivot[col] = df_pivot[col].ffill()
 
     df_pivot["Tryb"] = np.where(df_pivot["valve"] >= 0.5, "CWU", "CO")
 

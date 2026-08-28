@@ -51,9 +51,19 @@ def init_db() -> None:
                 windspeed REAL,
                 precipitation REAL,
                 latitude REAL,
-                longitude REAL
+                longitude REAL,
+                direct_radiation REAL,
+                diffuse_radiation REAL
             )
         ''')
+        
+        # Migracja: dodaj kolumny nasłonecznienia jeśli nie istnieją
+        cursor.execute("PRAGMA table_info(weather_data)")
+        existing_cols = {row[1] for row in cursor.fetchall()}
+        if 'direct_radiation' not in existing_cols:
+            cursor.execute('ALTER TABLE weather_data ADD COLUMN direct_radiation REAL')
+        if 'diffuse_radiation' not in existing_cols:
+            cursor.execute('ALTER TABLE weather_data ADD COLUMN diffuse_radiation REAL')
         
         # Indeksy zoptymalizowane pod typowe zapytania
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_code_time ON telemetry (code, timestamp)')
@@ -61,6 +71,29 @@ def init_db() -> None:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_weather_time ON weather_data (timestamp)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_dev_code_time ON telemetry (device_id, code, timestamp)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_time_desc ON telemetry (timestamp DESC)')
+
+        # Tabela ustawień użytkownika (key/value)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        ''')
+
+        # Tabela historii awarii pompy
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS fault_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp INTEGER NOT NULL,
+                device_id TEXT NOT NULL,
+                fault_code TEXT NOT NULL,
+                fault_bitmap INTEGER NOT NULL,
+                resolved_at INTEGER,
+                resolved INTEGER DEFAULT 0
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_fault_device_time ON fault_log (device_id, timestamp DESC)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_fault_unresolved ON fault_log (device_id, resolved)')
 
 
 def save_manual_energy_reading(reading_val: float, timestamp_sec: int) -> Tuple[bool, str]:
@@ -190,19 +223,18 @@ def save_properties_to_db(dev_id: str, properties: list, event_time: Optional[in
 
 def save_weather_data(timestamp: int, temperature: float, humidity: float, 
                       windspeed: float, precipitation: float, 
-                      latitude: float, longitude: float) -> bool:
+                      latitude: float, longitude: float,
+                      direct_radiation: float = None,
+                      diffuse_radiation: float = None) -> bool:
     """Zapisuje dane pogodowe z API Open-Meteo do bazy danych.
     
     HISTEREZA WYŁĄCZONA - każdy odczyt jest natychmiast zapisywany.
     """
     with db_cursor() as cursor:
-        # Histereza wyłączona - przechodzimy bezpośrednio do zapisu
-        # Sprawdzanie ostatniego rekordu i progów zostało tymczasowo dezaktywowane
-        
         cursor.execute('''
-            INSERT INTO weather_data (timestamp, temperature, humidity, windspeed, precipitation, latitude, longitude)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (timestamp, temperature, humidity, windspeed, precipitation, latitude, longitude))
+            INSERT INTO weather_data (timestamp, temperature, humidity, windspeed, precipitation, latitude, longitude, direct_radiation, diffuse_radiation)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (timestamp, temperature, humidity, windspeed, precipitation, latitude, longitude, direct_radiation, diffuse_radiation))
     return True
 
 
@@ -212,9 +244,9 @@ def get_weather_data(days: int = 7, is_today: bool = False) -> Optional[List[Tup
     
     with db_cursor() as cursor:
         if is_today:
-            # Pobierz dane od 00:00 dzisiaj (czas lokalny)
             cursor.execute('''
-                SELECT id, timestamp, temperature, humidity, windspeed, precipitation, latitude, longitude
+                SELECT id, timestamp, temperature, humidity, windspeed, precipitation, latitude, longitude,
+                       direct_radiation, diffuse_radiation
                 FROM weather_data
                 WHERE date(timestamp, 'unixepoch', 'localtime') = date('now', 'localtime')
                 ORDER BY timestamp ASC
@@ -222,10 +254,132 @@ def get_weather_data(days: int = 7, is_today: bool = False) -> Optional[List[Tup
         else:
             cutoff_time = int(time.time()) - (days * 24 * 60 * 60)
             cursor.execute('''
-                SELECT id, timestamp, temperature, humidity, windspeed, precipitation, latitude, longitude
+                SELECT id, timestamp, temperature, humidity, windspeed, precipitation, latitude, longitude,
+                       direct_radiation, diffuse_radiation
                 FROM weather_data
                 WHERE timestamp >= ?
                 ORDER BY timestamp ASC
             ''', (cutoff_time,))
         data = cursor.fetchall()
     return data
+
+
+def get_setting(key: str, default: str = None) -> Optional[str]:
+    """Pobiera wartość ustawienia z tabeli settings."""
+    with db_cursor() as cursor:
+        cursor.execute('SELECT value FROM settings WHERE key = ?', (key,))
+        row = cursor.fetchone()
+    return row[0] if row else default
+
+
+def get_current_work_mode() -> Optional[str]:
+    """Pobiera aktualny tryb pracy pompy (work_mode) z ostatniego rekordu."""
+    with db_cursor() as cursor:
+        cursor.execute('''
+            SELECT val_str FROM telemetry
+            WHERE device_id = ? AND code = 'work_mode'
+            ORDER BY timestamp DESC LIMIT 1
+        ''', (HEAT_PUMP_DEV_ID,))
+        row = cursor.fetchone()
+    return row[0] if row else None
+
+
+def get_current_auto_target() -> Optional[str]:
+    """Pobiera aktualny cel trybu auto (auto_run_tar_mode): '0'=chłodzenie, '1'=ogrzewanie."""
+    with db_cursor() as cursor:
+        cursor.execute('''
+            SELECT val_str FROM telemetry
+            WHERE device_id = ? AND code = 'auto_run_tar_mode'
+            ORDER BY timestamp DESC LIMIT 1
+        ''', (HEAT_PUMP_DEV_ID,))
+        row = cursor.fetchone()
+    return row[0] if row else None
+
+
+def set_setting(key: str, value: str) -> None:
+    """Zapisuje lub aktualizuje ustawienie w tabeli settings."""
+    with db_cursor() as cursor:
+        cursor.execute(
+            'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
+            (key, value)
+        )
+
+
+# --- Obsługa awarii (fault_log) ---
+
+def log_fault(device_id: str, fault_code: str, fault_bitmap: int, timestamp: int) -> None:
+    """Zapisuje nową awarię do logu. Pomija jeśli identyczna awaria jest już aktywna."""
+    with db_cursor() as cursor:
+        # Sprawdź czy ten kod jest już aktywny (nierozwiązany)
+        cursor.execute('''
+            SELECT id FROM fault_log
+            WHERE device_id = ? AND fault_code = ? AND resolved = 0
+        ''', (device_id, fault_code))
+        if cursor.fetchone():
+            return  # Awaria już aktywna — nie duplikuj
+
+        cursor.execute('''
+            INSERT INTO fault_log (timestamp, device_id, fault_code, fault_bitmap, resolved, resolved_at)
+            VALUES (?, ?, ?, ?, 0, NULL)
+        ''', (timestamp, device_id, fault_code, fault_bitmap))
+
+
+def resolve_faults(device_id: str, still_active_codes: List[str], timestamp: int) -> List[str]:
+    """
+    Oznacza jako rozwiązane awarie, które nie są już aktywne.
+    Zwraca listę kodów, które zostały rozwiązane.
+    """
+    with db_cursor() as cursor:
+        cursor.execute('''
+            SELECT id, fault_code FROM fault_log
+            WHERE device_id = ? AND resolved = 0
+        ''', (device_id,))
+        unresolved = cursor.fetchall()
+
+        resolved_codes = []
+        for row_id, code in unresolved:
+            if code not in still_active_codes:
+                cursor.execute('''
+                    UPDATE fault_log SET resolved = 1, resolved_at = ?
+                    WHERE id = ?
+                ''', (timestamp, row_id))
+                resolved_codes.append(code)
+
+    return resolved_codes
+
+
+def get_active_faults(device_id: str) -> List[Tuple]:
+    """Pobiera aktywne (nierozwiązane) awarie."""
+    with db_cursor() as cursor:
+        cursor.execute('''
+            SELECT id, timestamp, fault_code, fault_bitmap
+            FROM fault_log
+            WHERE device_id = ? AND resolved = 0
+            ORDER BY timestamp DESC
+        ''', (device_id,))
+        return cursor.fetchall()
+
+
+def get_fault_history(device_id: str, limit: int = 50) -> List[Tuple]:
+    """Pobiera historię awarii (rozwiązane i aktywne)."""
+    with db_cursor() as cursor:
+        cursor.execute('''
+            SELECT id, timestamp, fault_code, fault_bitmap, resolved, resolved_at
+            FROM fault_log
+            WHERE device_id = ?
+            ORDER BY timestamp DESC
+            LIMIT ?
+        ''', (device_id, limit))
+        return cursor.fetchall()
+
+
+def get_current_fault_value(device_id: str) -> Optional[float]:
+    """Pobiera ostatnią wartość bitmapy fault z telemetrii."""
+    with db_cursor() as cursor:
+        cursor.execute('''
+            SELECT val_num FROM telemetry
+            WHERE device_id = ? AND code = 'fault'
+            ORDER BY timestamp DESC LIMIT 1
+        ''', (device_id,))
+        row = cursor.fetchone()
+    return row[0] if row else None

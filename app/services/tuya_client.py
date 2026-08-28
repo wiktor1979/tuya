@@ -13,7 +13,7 @@ from app.config import (
 )
 
 
-def get_tuya_accounts() -> List[Dict[str, any]]:
+def get_tuya_accounts() -> List[Dict[str, Any]]:
     """Zwraca listę skonfigurowanych kont Tuya."""
     return TUYA_ACCOUNTS
 
@@ -22,6 +22,13 @@ class DeadbandFilter:
     """Filtr deadband dla telemetrii - obsługa dynamicznej histerezy."""
     
     __slots__ = ['last_saved_val', 'last_saved_time']
+
+    # Parametry bez heartbeatu — zapisywane TYLKO gdy wartość się zmieni.
+    # Flagi binarne i rzadko zmieniające się stany (99-100% duplikatów przy heartbeat).
+    NO_HEARTBEAT_CODES = frozenset({
+        "ac_fan", "dc_fan2", "defrost", "fault_flag", "freeze", "protect_flag",
+        "pump_sta", "valve",
+    })
     
     def __init__(self):
         self.last_saved_val: Dict[str, Any] = {}
@@ -46,10 +53,12 @@ class DeadbandFilter:
             return True
         
         # 2. Heartbeat: upłynęło 5 minut od ostatniego zapisu tego parametru -> zapisz
-        if (now - self.last_saved_time[code]) >= MAX_HEARTBEAT_SEC:
-            self.last_saved_val[code] = new_val
-            self.last_saved_time[code] = now
-            return True
+        #    WYJĄTEK: flagi binarne i rzadko zmieniające się stany — bez heartbeatu
+        if code not in self.NO_HEARTBEAT_CODES:
+            if (now - self.last_saved_time[code]) >= MAX_HEARTBEAT_SEC:
+                self.last_saved_val[code] = new_val
+                self.last_saved_time[code] = now
+                return True
 
         old_val = self.last_saved_val[code]
 
@@ -137,7 +146,7 @@ def message_id(msg_id: pulsar.MessageId) -> str:
 class TuyaPulsarClient:
     """Klient do obsługi połączenia z Tuya Pulsar - obsługa wielu kont."""
     
-    def __init__(self, account_config: Optional[Dict[str, any]] = None):
+    def __init__(self, account_config: Optional[Dict[str, Any]] = None):
         """
         Inicjalizacja klienta dla konkretnego konta Tuya.
         
@@ -267,7 +276,7 @@ class MultiAccountTuyaClient:
         self.clients: List[TuyaPulsarClient] = []
         self.threads: List = []
     
-    def add_account(self, account_config: Dict[str, any]) -> None:
+    def add_account(self, account_config: Dict[str, Any]) -> None:
         """Dodaje nowe konto Tuya do monitorowania."""
         client = TuyaPulsarClient(account_config)
         self.clients.append(client)

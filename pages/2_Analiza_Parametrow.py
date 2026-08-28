@@ -10,8 +10,10 @@ from app.services.data_loader import (
     process_telemetry,
     compute_daily_stats,
 )
+from app.services.database import get_weather_data
 from app.ui.styles import inject_css
 from app.ui.sidebar import render_sidebar
+from app.ui import tab_heating_curve
 
 # --- KONFIGURACJA STRONY ---
 st.set_page_config(page_title="Analiza Parametrów — Pompa Ciepła", layout="wide", page_icon="🔬")
@@ -29,7 +31,7 @@ if st.button("🔄 Odśwież dane"):
 settings = render_sidebar()
 
 # --- ŁADOWANIE DANYCH ---
-is_today_range = settings.selected_range == "1 dzień"
+is_today_range = settings.selected_range == "Dzisiaj"
 df = load_pump_data(settings.hours_back, is_today=is_today_range)
 df_all_time = load_pump_data(settings.hours_back, all_time=True)
 
@@ -53,6 +55,17 @@ df_pivot_all = process_telemetry(
 
 daily_df = compute_daily_stats(df_pivot, settings.time_offset_hours) if df_pivot is not None else pd.DataFrame()
 daily_df_all = compute_daily_stats(df_pivot_all, settings.time_offset_hours) if df_pivot_all is not None else pd.DataFrame()
+
+# Dane pogodowe (dla analizy krzywej grzewczej)
+weather_df_analysis = pd.DataFrame()
+try:
+    weather_data = get_weather_data(days=max(30, settings.hours_back // 24 + 1), is_today=is_today_range)
+    if weather_data and len(weather_data) > 0:
+        col_names = ['id', 'timestamp', 'temperature', 'humidity', 'windspeed', 'precipitation',
+                     'latitude', 'longitude', 'direct_radiation', 'diffuse_radiation']
+        weather_df_analysis = pd.DataFrame(weather_data, columns=col_names[:len(weather_data[0])])
+except Exception:
+    pass
 
 
 # ==============================================================================
@@ -92,11 +105,12 @@ if df_pivot is None or df_pivot.empty:
     st.warning("⚠️ Brak danych w wybranym zakresie czasu. Zmień zakres w panelu bocznym.")
     st.stop()
 
-tab_cop, tab_hydr, tab_comp, tab_defr = st.tabs([
+tab_cop, tab_hydr, tab_comp, tab_defr, tab_curve = st.tabs([
     "🔋 Wydajność COP",
     "💧 Hydraulika i ΔT",
     "⚙️ Sprężarka i Taktowanie",
     "❄️ Defrost i Obieg Chłodniczy",
+    "📈 Krzywa Grzewcza",
 ])
 
 
@@ -709,3 +723,14 @@ with tab_defr:
             alerts_fired = True
     if not alerts_fired:
         st.success("✅ Cykle defrost w normie — czasy i odstępy prawidłowe.")
+
+
+# ==============================================================================
+# TAB 5: KRZYWA GRZEWCZA
+# ==============================================================================
+
+with tab_curve:
+    tab_heating_curve.render(
+        df_pivot=df_pivot_all,
+        weather_df=weather_df_analysis if not weather_df_analysis.empty else None,
+    )

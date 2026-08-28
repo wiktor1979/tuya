@@ -17,45 +17,45 @@ Aplikacja do monitorowania pompy ciepła z wykorzystaniem API Tuya Pulsar (EU) z
 │   │   ├── database.py           # Warstwa dostępu do bazy (z poolingiem, WAL, indeksami)
 │   │   ├── data_loader.py        # Ładowanie i przetwarzanie danych dla dashboardu
 │   │   ├── tuya_client.py        # Klient Tuya Pulsar z filtrem deadband
-│   │   ├── calculator.py         # Kalkulator COP/SCOP
 │   │   ├── exporter.py           # Eksport CSV
 │   │   └── analytics.py          # Zaawansowana diagnostyka i analiza
 │   └── ui/                       # Komponenty UI dashboardu
 │       ├── __init__.py
-│       ├── styles.py             # CSS i stałe wizualne (PARAM_INFO)
+│       ├── styles.py             # CSS i stałe wizualne (re-export PARAM_INFO z config)
 │       ├── sidebar.py            # Panel boczny z ustawieniami
 │       ├── tab_main.py           # Zakładka: Panel Główny
 │       ├── tab_scop.py           # Zakładka: Bilans Energetyczny & SCOP
 │       ├── tab_diagnostics.py    # Zakładka: Diagnostyka Pompy
 │       ├── tab_weather.py        # Zakładka: Kontekst Pogodowy
 │       ├── tab_meter.py          # Zakładka: Fizyczny Licznik Energii
-│       └── tab_export.py         # Zakładka: Eksport Danych
+│       ├── tab_export.py         # Zakładka: Eksport Danych
+│       └── tab_heating_curve.py  # Zakładka: Doradca Krzywej Grzewczej
 ├── pages/                        # Podstrony Streamlit (multipage app)
 │   └── 2_Analiza_Parametrow.py   # Analiza Parametrów: COP, Hydraulika, Sprężarka, Defrost
 ├── main.py                       # Skrypt zbieracza danych (z wątkiem pogodowym)
-├── dashboard.py                  # Dashboard Streamlit — strona główna (orkiestrator)
+├── Panel.py                      # Dashboard Streamlit — strona główna (orkiestrator)
 ├── db.py                         # Warstwa kompatybilności wstecznej
 ├── requirements.txt              # Zależności Python
 ├── Dockerfile                    # Kontener Docker
 ├── fly.toml                      # Konfiguracja Fly.io
-└── start.sh                      # Skrypt startowy
+├── start.sh                      # Skrypt startowy (produkcja)
+└── start_local.bat               # Skrypt startowy (lokalnie: pobiera bazę z Fly.io + Streamlit)
 ```
 
 ## Architektura
 
 Projekt został poddany refaktoryzacji zgodnie z zasadą pojedynczej odpowiedzialności (SRP):
 
-- **config.py** - Centralne miejsce na zmienne środowiskowe i stałe konfiguracji
+- **config.py** - Centralne miejsce na zmienne środowiskowe, stałe konfiguracji, metadane parametrów (PARAM_INFO)
 - **models/** - Definicje struktur danych (dataclasses)
 - **services/** - Logika biznesowa podzielona na niezależne moduły:
   - `database.py` - Operacje CRUD na SQLite z connection pooling, trybem WAL i optymalnymi indeksami
   - `data_loader.py` - Zapytania SQL i przetwarzanie danych dla dashboardu (COP, SCOP nominalny/realny, energia, straty defrostu, statystyki dzienne)
   - `tuya_client.py` - Komunikacja z Tuya Pulsar, deszyfrowanie AES-GCM/ECB, filtr deadband z dynamiczną histerezą
-  - `calculator.py` - Obliczenia wydajności (COP, SCOP, energia)
   - `exporter.py` - Eksport danych do CSV
   - `analytics.py` - Zaawansowana diagnostyka: wykrywanie cykli krótkich, analiza inwertera, szacowanie COP, korelacja pogodowa
 - **ui/** - Modularny interfejs użytkownika (każda zakładka to osobny moduł):
-  - `styles.py` - CSS, stałe wizualne, metadane parametrów (PARAM_INFO)
+  - `styles.py` - CSS, stałe wizualne (re-export PARAM_INFO i get_param_label z config.py)
   - `sidebar.py` - Panel boczny z konfiguracją (zakres czasu, kalibracja, koszty)
   - `tab_main.py` - Bieżące metryki i wykresy parametrów
   - `tab_scop.py` - Bilans energetyczny, SCOP nominalny vs realny (z defrostem), straty defrostu, statystyki dzienne
@@ -63,6 +63,7 @@ Projekt został poddany refaktoryzacji zgodnie z zasadą pojedynczej odpowiedzia
   - `tab_weather.py` - Korelacja pogodowa, porównanie źródeł temperatury
   - `tab_meter.py` - Ręczne odczyty fizycznego licznika energii
   - `tab_export.py` - Eksport danych do CSV
+  - `tab_heating_curve.py` - Doradca krzywej grzewczej: analiza duty cycle, rekomendacje zmiany nastaw
 - **dashboard.py** - Lekki orkiestrator (~140 linii): ładuje dane, konfiguruje stronę, deleguje do zakładek. Auto-odświeżanie z countdown (60s pompa aktywna / 300s idle)
 - **db.py** - Warstwa kompatybilności dla istniejących importów
 - **main.py** - Główny skrypt zbieracza z wątkiem pogodowym (Open-Meteo API)
@@ -159,8 +160,14 @@ Aplikacja automatycznie wykryje liczbę skonfigurowanych kont i uruchomi odpowie
 
 ## Dashboard
 ```bash
-streamlit run dashboard.py --server.port 8501
+streamlit run Panel.py --server.port 8501
 ```
+
+### Uruchomienie lokalne (Windows)
+```bash
+start_local.bat
+```
+Skrypt pyta czy pobrać bazę z Fly.io, uruchamia migrację struktury i startuje Streamlit.
 
 Dashboard zawiera 6 zakładek:
 1. **Panel Główny** - Podstawowe metryki i status systemu
@@ -172,12 +179,13 @@ Dashboard zawiera 6 zakładek:
 
 ### Podstrona: Analiza Parametrów (multipage)
 
-Osobna podstrona dostępna z nawigacji bocznej, z 4 zakładkami opartymi o parametry monitoringowe wg kategorii:
+Osobna podstrona dostępna z nawigacji bocznej, z 5 zakładkami opartymi o parametry monitoringowe wg kategorii:
 
 1. **🔋 Wydajność COP** - COP chwilowy w czasie (z progami referencyjnymi i progiem opłacalności SCOP 3.1), SCOP realny z defrostem, scatter COP vs temp. zewnętrzna (trend lowess), SCOP dzienny (realny vs nominalny) z kolorowaniem wg progu opłacalności, alerty spadku wydajności
 2. **💧 Hydraulika i ΔT** - Delta T zasilanie-powrót z zakresami normy (3-7°C CO, 5-10°C CWU), wykres przepływu, korelacja ΔT vs przepływ, alerty hydrauliczne
 3. **⚙️ Sprężarka i Taktowanie** - Timeline ON/OFF z czasami cykli, histogram długości cykli (progi 30/60 min), starty/dobę (próg 15/20), modulacja częstotliwości
 4. **❄️ Defrost i Obieg Chłodniczy** - Timeline defrostów, scatter defrost vs temp. zewn., odstępy między cyklami (próg 45 min), zawór EEV (m_eev/a_eev), wentylator DC Fan 1
+5. **📈 Krzywa Grzewcza** - Doradca krzywej grzewczej: formularz nastaw (-10°C/+20°C), duty cycle sprężarki per bin temperaturowy, wykrywanie przyczyny zatrzymań (termostat vs pompa), korelacja nasłonecznienia, rekomendacja zmiany lewego/prawego końca krzywej
 
 ### Docker
 ```bash
@@ -245,8 +253,8 @@ LOCATION_NAME="Łódź"  # Nazwa lokalizacji
 - 🔍 **Analiza efektywności modulacji** - Ocena pracy inwertera przy zmiennym obciążeniu
 
 ### Integracja Pogodowa
-- 🌤️ **Open-Meteo API** - Automatyczne pobieranie danych co godzinę
-- 🌤️ **Dane historyczne** - Temperatura, opady, zachmurzenie, wiatr
+- 🌤️ **Open-Meteo API** - Automatyczne pobieranie danych co godzinę (temperatura, wilgotność, wiatr, opady, nasłonecznienie)
+- 🌤️ **Dane historyczne** - Temperatura, opady, zachmurzenie, wiatr, radiacja słoneczna (direct + diffuse)
 - 🌤️ **Kontekst dla analiz** - Powiązanie warunków pogodowych z pracą pompy
 - 🌤️ **Prognoza wpływu** - Jak temperatura zewnętrzna wpływa na COP
 
