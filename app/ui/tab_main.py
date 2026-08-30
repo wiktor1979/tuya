@@ -29,6 +29,24 @@ def render(df: pd.DataFrame, df_pivot: pd.DataFrame, resample_rule, time_offset_
         codes_str = ", ".join(sorted(all_active_codes))
         st.error(f"🚨 **AWARIA POMPY** — aktywne kody błędów: **{codes_str}**")
 
+    # --- Wizualne wyróżnienie statusu pompy (pracuje vs stoi) ---
+    pump_running = False
+    if "comp_freq" in df_pivot.columns:
+        last_freq = df_pivot["comp_freq"].dropna().iloc[-1] if not df_pivot["comp_freq"].dropna().empty else 0
+        pump_running = last_freq > 0
+
+    if pump_running:
+        st.markdown("""<style>
+        [data-testid="stMetric"] {
+            border-color: #2e7d32 !important;
+            box-shadow: 0 0 12px rgba(46,125,50,0.35) !important;
+        }
+        </style>""", unsafe_allow_html=True)
+    else:
+        st.markdown("""<style>
+        [data-testid="stMetric"] { opacity: 0.65; }
+        </style>""", unsafe_allow_html=True)
+
     # Aktualne wartości
     latest_df = df.drop_duplicates(subset=["code"], keep="last")
 
@@ -37,11 +55,10 @@ def render(df: pd.DataFrame, df_pivot: pd.DataFrame, resample_rule, time_offset_
         if not row.empty:
             v_num = row["val_num"].values[0]
             if pd.notnull(v_num):
-                # heat_temp_set_z2: stare dane w bazie mogą być niedzielone (350 zamiast 35.0)
-                # — TEMP_CODES dodane dopiero teraz, historyczne rekordy nie mają konwersji
-                if c == "heat_temp_set_z2" and v_num > 100:
+                # heat_temp_set_z2, idr_temp_set: stare dane w bazie mogą być niedzielone (350/250 zamiast 35.0/25.0)
+                if c in ("heat_temp_set_z2", "idr_temp_set") and v_num > 100:
                     v_num = v_num / 10.0
-                return f"{v_num} °C" if "temp" in c or c in ["tidr", "back_temp", "heat_temp_set", "heat_temp_set_z2", "hot_water_temp_set"] else f"{v_num}"
+                return f"{v_num} °C" if "temp" in c or c in ["tidr", "back_temp", "heat_temp_set", "heat_temp_set_z2", "hot_water_temp_set", "idr_temp_set"] else f"{v_num}"
             return str(row["val_str"].values[0])
         return "N/A"
 
@@ -86,9 +103,10 @@ def render(df: pd.DataFrame, df_pivot: pd.DataFrame, resample_rule, time_offset_
     c6.metric("Przepływ", f"{latest_flow:.1f} m³/h", delta=f"{latest_flow * 1000 / 60:.1f} L/min")
     c7.metric("📊 Chwilowe COP", f"{latest_cop:.2f}", delta=f"Tryb: {current_mode}")
 
-    cp1, cp2 = st.columns(2)
+    cp1, cp2, cp3 = st.columns(3)
     cp1.metric("🔥 Moc cieplna (P_th)", f"{latest_p_th:.2f} kW")
     cp2.metric("⚡ Pobór prądu (P_el)", f"{latest_p_el:.2f} kW")
+    cp3.metric("📈 Nastawa z krzywej", get_val("idr_temp_set"))
 
     # Tryby specjalne — widoczne tylko gdy aktywne
     def is_mode_active(code):

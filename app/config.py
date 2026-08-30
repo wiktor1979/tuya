@@ -38,7 +38,7 @@ MQ_ENV_PROD = "event"
 PULSAR_SERVER_EU = "pulsar+ssl://mqe.tuyaeu.com:7285/"
 
 # Baza danych
-DB_FILE = "/data/tuya_telemetry.db"
+DB_FILE = "./data/tuya_telemetry.db"
 
 # Domyślne ID urządzenia (dla wstecznej kompatybilności)
 HEAT_PUMP_DEV_ID = "bf874f7ae72aca1fc23op0"
@@ -126,7 +126,7 @@ PARAM_INFO = {
     "auto_heat_temp_set_z1": {"label": "Auto CO Z1", "desc": "Zadana temp. grzania Z1 w trybie auto"},
     "auto_heat_temp_set_z2": {"label": "Auto CO Z2", "desc": "Zadana temp. grzania Z2 w trybie auto"},
     "auto_cool_temp_set_z2": {"label": "Auto chłodzenie Z2", "desc": "Zadana temp. chłodzenia Z2 w trybie auto"},
-    "idr_temp_set": {"label": "Nastawa temp. pokojowej", "desc": "Zadana temperatura pomieszczenia"},
+    "idr_temp_set": {"label": "Nastawa z krzywej", "desc": "Temperatura zadana wyliczona z krzywej grzewczej (IDR temp set)"},
 
     # Parametry elektryczne i mechaniczne
     "ac_vol": {"label": "Napięcie AC", "desc": "Napięcie zasilania sieciowego, jednostka: V"},

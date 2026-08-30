@@ -99,7 +99,7 @@ NEEDED_COLS = [
     "out_water_temp", "in_water_temp", "flow_rate", "ac_vol", "ac_curr",
     "comp_freq", "disc_temp", "amb_temp", "valve", "heat_temp_set", "hot_water_temp_set", "defrost",
     "m_eev", "a_eev", "dc_fan1", "freeze",
-    "heat_temp_set_z2", "zone_select", "work_mode"
+    "heat_temp_set_z2", "zone_select", "work_mode", "idr_temp_set"
 ]
 
 RESAMPLE_AGG = {
@@ -121,7 +121,8 @@ RESAMPLE_AGG = {
     "freeze": "max",
     "heat_temp_set_z2": "last",
     "zone_select": "last",
-    "work_mode": "last"
+    "work_mode": "last",
+    "idr_temp_set": "last"
 }
 
 
@@ -188,6 +189,11 @@ def process_telemetry(
     if "heat_temp_set_z2" in df_pivot.columns:
         mask_old = df_pivot["heat_temp_set_z2"] > 100
         df_pivot.loc[mask_old, "heat_temp_set_z2"] = df_pivot.loc[mask_old, "heat_temp_set_z2"] / 10.0
+
+    # Korekta historycznych danych idr_temp_set (np. 250 zamiast 25.0)
+    if "idr_temp_set" in df_pivot.columns:
+        mask_old_idr = df_pivot["idr_temp_set"] > 100
+        df_pivot.loc[mask_old_idr, "idr_temp_set"] = df_pivot.loc[mask_old_idr, "idr_temp_set"] / 10.0
 
     if resample_rule:
         # Filtruj agg dict do kolumn faktycznie obecnych w df_pivot
