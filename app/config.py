@@ -100,7 +100,7 @@ LOCATION_NAME = os.environ.get("LOCATION_NAME", "Łódź")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 TELEGRAM_ENABLED = bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)
-DAILY_REPORT_HOUR = int(os.environ.get("DAILY_REPORT_HOUR", 21))  # godzina raportu dziennego (czas lokalny)
+DAILY_REPORT_HOUR = int(os.environ.get("DAILY_REPORT_HOUR", 8))  # godzina raportu dziennego (czas lokalny)
 SERVER_TIMEZONE_OFFSET = int(os.environ.get("SERVER_TIMEZONE_OFFSET", 0))  # przesunięcie serwera vs czas lokalny (np. -2 gdy serwer UTC, użytkownik UTC+2)
 
 # Metadane parametrów pompy — na podstawie oficjalnej specyfikacji modelu Tuya (model 0000043th5)
