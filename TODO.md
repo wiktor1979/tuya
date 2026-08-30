@@ -18,15 +18,15 @@
 - [ ] Eksport danych do Home Assistant (REST API / MQTT)
 - [x] Powiadomienia Telegram: alerty awarii (natychmiast), utrata komunikacji, raport dzienny
 - [x] Logowanie kodów błędów pompy (fault bitmap E01-E16/P01-P14, tabela fault_log, alert na dashboardzie)
-- [x] Wykrywanie utraty komunikacji z pompą (watchdog 15 min + alert Telegram)
-- [ ] Integracja z systemami fotowoltaicznymi (analiza nadwyżek energii)
+- [x] Wykrywanie utraty komunikacji z pompą (watchdog 15 min + alert Telegram)- [ ] Integracja z systemami fotowoltaicznymi (analiza nadwyżek energii)
 - [ ] Webhooki dla zdarzeń krytycznych
 - [ ] Integracja z Google Sheets / Excel Online
 
 ## 4. Ulepszenia wizualne i UX
 - [ ] Responsywny dashboard mobilny (dostosowanie layoutu Streamlit)
 - [ ] Mapa cieplna (heatmap) aktywności pompy w ciągu doby/tygodnia
-- [ ] Porównania okresów (YoY - rok do roku, MoM - miesiąc do miesiąca)
+- [x] Porównania okresów (MoM - miesiąc do miesiąca) z HDD, kWh/HDD, SCOP CO/CWU
+- [ ] Porównania YoY (rok do roku) — włączy się automatycznie gdy będą dane z 2 lat
 - [ ] Kalkulator zwrotu z inwestycji (ROI) na podstawie rzeczywistych danych
 - [ ] Tryb ciemny/jasny dla dashboardu
 - [ ] Eksport raportów PDF z podsumowaniem okresu grzewczego
@@ -34,7 +34,7 @@
 
 ## 5. Rozszerzenie danych pogodowych
 - [ ] Pobieranie archiwalnych danych pogodowych dla pełnych sezonów grzewczych
-- [ ] Wykresy korelacji z liczbą stopniodni (HDD - Heating Degree Days)
+- [x] Wykresy korelacji z liczbą stopniodni (HDD - Heating Degree Days) — podstrona Porównanie Okresów
 - [ ] Integracja z dodatkowymi źródłami danych pogodowych (alternatywy dla Open-Meteo)
 - [ ] Prognoza pogody na 7-14 dni w kontekście planowanej pracy pompy
 - [ ] Wizualizacja wpływu nasłonecznienia na pracę pompy
