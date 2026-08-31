@@ -10,7 +10,7 @@ from app.services.data_loader import load_manual_readings
 from db import save_manual_energy_reading, update_manual_energy_reading, delete_manual_energy_reading
 
 
-def render(daily_df_all: pd.DataFrame, time_offset_hours: int):
+def render(daily_df_all: pd.DataFrame, df_pivot_all: pd.DataFrame, time_offset_hours: int):
     """Renderuje zakładkę Fizyczny Licznik."""
     st.header("⚡ Rejestracja i Analiza Fizycznego Licznika Energii")
     st.caption(f"Dane wprowadzane ręcznie są rejestrowane w bazie pod identyfikatorem urządzenia: `{MANUAL_METER_DEV_ID}`.")
@@ -98,10 +98,10 @@ def render(daily_df_all: pd.DataFrame, time_offset_hours: int):
                             st.error("Błąd podczas usuwania wpisu.")
 
     st.markdown("---")
-    _render_meter_table(time_offset_hours, daily_df_all)
+    _render_meter_table(time_offset_hours, daily_df_all, df_pivot_all)
 
 
-def _render_meter_table(time_offset_hours: int, daily_df_all: pd.DataFrame):
+def _render_meter_table(time_offset_hours: int, daily_df_all: pd.DataFrame, df_pivot_all: pd.DataFrame):
     """Tabela historii odczytów i wykres porównawczy."""
     st.subheader("📋 Tabela odczytów i zużycia energii")
     df_meter_all = load_manual_readings(time_offset_hours)
@@ -168,3 +168,102 @@ def _render_meter_table(time_offset_hours: int, daily_df_all: pd.DataFrame):
         hovermode="x unified", barmode="group"
     )
     st.plotly_chart(fig_comp, width="stretch")
+
+    # --- TABELA PORÓWNAWCZA: Licznik vs Pompa (okres-do-okresu) ---
+    _render_comparison_table(df_display, df_pivot_all)
+
+
+def _render_comparison_table(df_meter: pd.DataFrame, df_pivot_all: pd.DataFrame):
+    """Tabela porównawcza licznik fizyczny vs wyliczenia pompy — okres-do-okresu.
+
+    Porównuje zużycie energii dokładnie w tych samych oknach czasowych:
+    od jednego odczytu licznika do następnego.
+    """
+    st.markdown("---")
+    st.subheader("📋 Porównanie: Licznik Fizyczny vs Wyliczenia Pompy")
+    st.caption("Porównanie okres-do-okresu — energia pompy liczona dokładnie między kolejnymi odczytami licznika.")
+
+    if len(df_meter) < 2:
+        st.info("Wprowadź co najmniej 2 odczyty licznika, aby zobaczyć porównanie.")
+        return
+
+    if df_pivot_all is None or df_pivot_all.empty:
+        st.info("Brak danych telemetrycznych pompy do porównania.")
+        return
+
+    # Buduj tabelę okres-do-okresu
+    df_sorted = df_meter.sort_values("czas_dt").reset_index(drop=True)
+    rows = []
+
+    for i in range(1, len(df_sorted)):
+        prev = df_sorted.iloc[i - 1]
+        curr = df_sorted.iloc[i]
+
+        ts_from = prev["czas_dt"]
+        ts_to = curr["czas_dt"]
+        meter_kwh = curr["stan_kwh"] - prev["stan_kwh"]
+        hours = (curr["timestamp"] - prev["timestamp"]) / 3600.0
+
+        # Energia pompy w tym samym oknie czasowym
+        mask = (df_pivot_all["czas"] >= ts_from) & (df_pivot_all["czas"] < ts_to)
+        pump_kwh = df_pivot_all.loc[mask, "E_el_kwh"].sum() if mask.any() else np.nan
+
+        diff = meter_kwh - pump_kwh if not np.isnan(pump_kwh) else np.nan
+        deviation = (diff / meter_kwh * 100) if meter_kwh > 0 and not np.isnan(diff) else np.nan
+
+        rows.append({
+            "Od": ts_from.strftime("%d.%m %H:%M"),
+            "Do": ts_to.strftime("%d.%m %H:%M"),
+            "Czas [h]": round(hours, 1),
+            "Licznik [kWh]": round(meter_kwh, 2),
+            "Pompa [kWh]": round(pump_kwh, 2) if not np.isnan(pump_kwh) else None,
+            "Różnica [kWh]": round(diff, 2) if not np.isnan(diff) else None,
+            "Odchyłka [%]": round(deviation, 1) if not np.isnan(deviation) else None,
+        })
+
+    comp_df = pd.DataFrame(rows)
+
+    if comp_df.empty:
+        st.info("Brak danych do porównania.")
+        return
+
+    # Filtr okresu
+    period = st.radio(
+        "Okres porównania:",
+        ["Ostatnie 3 okresy", "Ostatnie 7 okresów", "Ostatnie 14 okresów", "Ostatnie 30 okresów", "Wszystko"],
+        horizontal=True,
+        key="meter_comparison_period"
+    )
+
+    if period == "Ostatnie 3 okresy":
+        comp_df = comp_df.tail(3)
+    elif period == "Ostatnie 7 okresów":
+        comp_df = comp_df.tail(7)
+    elif period == "Ostatnie 14 okresów":
+        comp_df = comp_df.tail(14)
+    elif period == "Ostatnie 30 okresów":
+        comp_df = comp_df.tail(30)
+
+    st.dataframe(comp_df, hide_index=True, use_container_width=True)
+
+    # Podsumowanie — tylko wiersze z danymi z obu źródeł
+    valid = comp_df.dropna(subset=["Pompa [kWh]"])
+    if not valid.empty:
+        sum_meter = valid["Licznik [kWh]"].sum()
+        sum_pump = valid["Pompa [kWh]"].sum()
+        sum_diff = sum_meter - sum_pump
+        avg_deviation = (sum_diff / sum_meter * 100) if sum_meter > 0 else 0
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Σ Licznik", f"{sum_meter:.2f} kWh")
+        c2.metric("Σ Pompa", f"{sum_pump:.2f} kWh")
+        c3.metric("Σ Różnica", f"{sum_diff:+.2f} kWh")
+        c4.metric("Śr. odchyłka", f"{avg_deviation:+.1f} %")
+
+        if abs(avg_deviation) > 10:
+            st.warning(
+                f"⚠️ Średnia odchyłka wynosi **{avg_deviation:+.1f}%** — różnica między licznikiem a wyliczeniami "
+                f"jest znacząca. Możliwe przyczyny: niedokładność cos(φ), kalibracja strat standby/active."
+            )
+        elif abs(avg_deviation) <= 5:
+            st.success(f"✅ Średnia odchyłka **{avg_deviation:+.1f}%** — wyliczenia pompy dobrze zgadzają się z licznikiem.")

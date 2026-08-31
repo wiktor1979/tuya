@@ -123,7 +123,7 @@ def render_dashboard(settings):
         tab_weather.render(df_pivot, weather_df, diagnostic_report, settings.time_offset_hours)
 
     with tab5:
-        tab_meter.render(daily_df_all, settings.time_offset_hours)
+        tab_meter.render(daily_df_all, df_pivot_all, settings.time_offset_hours)
 
     with tab6:
         tab_export.render(df, df_pivot, daily_df, settings.hours_back)
